@@ -1,0 +1,169 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Iniciar sesión | LujoShop</title>
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
+
+    <style>
+        body {
+            min-height: 100vh;
+            background:
+                linear-gradient(
+                    rgba(0, 0, 0, 0.83),
+                    rgba(0, 0, 0, 0.9)
+                ),
+                radial-gradient(
+                    circle at top right,
+                    #5c1d21,
+                    #151615 45%
+                );
+        }
+
+        .login-page {
+            display: grid;
+            min-height: 100vh;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 420px;
+            padding: 38px;
+            border: 1px solid #363636;
+            border-radius: 18px;
+            background: rgba(22, 22, 22, 0.96);
+            color: white;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+        }
+
+        .logo-symbol {
+            display: grid;
+            width: 68px;
+            height: 68px;
+            margin: 0 auto 18px;
+            place-items: center;
+            border: 2px solid #e6313a;
+            border-radius: 16px;
+            color: #e6313a;
+            font-size: 25px;
+            font-weight: 700;
+        }
+
+        .login-card h1 {
+            margin-bottom: 7px;
+            text-align: center;
+            font-size: 27px;
+        }
+
+        .login-card .subtitle {
+            margin-bottom: 28px;
+            color: #a7a7a7;
+            text-align: center;
+        }
+
+        .login-card label {
+            margin-bottom: 7px;
+            color: #d5d5d5;
+            font-size: 14px;
+        }
+
+        .login-card input {
+            width: 100%;
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            border: 1px solid #454545;
+            border-radius: 9px;
+            background: #252525;
+            color: white;
+            outline: none;
+        }
+
+        .login-card input:focus {
+            border-color: #e6313a;
+            box-shadow: 0 0 0 3px rgba(230, 49, 58, 0.15);
+        }
+
+        .login-button {
+            width: 100%;
+            padding: 12px;
+            border: 0;
+            border-radius: 9px;
+            background: #e6313a;
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        .login-button:hover {
+            background: #c8232c;
+        }
+
+        .error-message {
+            margin-bottom: 18px;
+            padding: 11px;
+            border-radius: 8px;
+            background: #492023;
+            color: #ffb9bd;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="login-page">
+        <section class="login-card">
+
+            <div class="logo-symbol">LS</div>
+
+            <h1>LujoShop</h1>
+
+            <p class="subtitle">
+                Sistema de gestión interna
+            </p>
+
+            {% if form.errors %}
+                <div class="error-message">
+                    Usuario o contraseña incorrectos.
+                </div>
+            {% endif %}
+
+            <form method="post">
+                {% csrf_token %}
+
+                <label for="{{ form.username.id_for_label }}">
+                    Usuario
+                </label>
+
+                {{ form.username }}
+
+                <label for="{{ form.password.id_for_label }}">
+                    Contraseña
+                </label>
+
+                {{ form.password }}
+
+                {% if next %}
+                    <input type="hidden" name="next" value="{{ next }}">
+                {% endif %}
+
+                <button class="login-button" type="submit">
+                    Iniciar sesión
+                </button>
+            </form>
+
+        </section>
+    </main>
+</body>
+</html>

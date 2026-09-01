@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Importar {{ config.title }} | LujoShop{% endblock %}
+{% block page_title %}Importar {{ config.title }} desde Excel{% endblock %}
+{% block page_description %}Carga o actualiza varios registros utilizando una plantilla .xlsx{% endblock %}
+{% block content %}
+<div class="import-layout">
+  <section class="content-card import-card">
+    <div class="import-icon"><i class="bi bi-file-earmark-excel"></i></div>
+    <h2>Selecciona el archivo Excel</h2>
+    <p class="text-secondary">Utiliza la plantilla oficial para evitar errores en los nombres y formatos de las columnas.</p>
+    {% if errors %}<div class="alert alert-danger import-errors"><strong>No se importó ningún registro:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+    <form method="post" enctype="multipart/form-data" class="mt-4">{% csrf_token %}
+      <label class="upload-zone" for="excel-file"><i class="bi bi-cloud-arrow-up"></i><strong>Haz clic para elegir el archivo</strong><span>Solo archivos .xlsx · máximo 10 MB</span><input id="excel-file" type="file" name="archivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+      <div id="selected-file" class="selected-file"></div>
+      <div class="form-actions"><a class="btn btn-light" href="{% url 'record_list' module %}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-upload"></i> Importar datos</button></div>
+    </form>
+  </section>
+  <aside class="content-card import-help"><h3><i class="bi bi-info-circle"></i> Antes de importar</h3><ol><li>Descarga la plantilla del módulo.</li><li>Completa o pega los datos sin cambiar los encabezados.</li><li>Deja el ID vacío para crear registros nuevos.</li><li>Escribe un ID existente para actualizarlo.</li><li>Guarda y carga el archivo .xlsx.</li></ol><a class="btn btn-outline-success w-100" href="{% url 'excel_template' module %}"><i class="bi bi-download"></i> Descargar plantilla Excel</a><div class="import-safety"><i class="bi bi-shield-check"></i><span>Si existe un error, no se guardará ninguna fila.</span></div></aside>
+</div>
+<script>document.getElementById('excel-file').addEventListener('change',event=>{const file=event.target.files[0];document.getElementById('selected-file').innerHTML=file?`<i class="bi bi-file-earmark-check"></i> ${file.name}`:'';});</script>
+{% endblock %}

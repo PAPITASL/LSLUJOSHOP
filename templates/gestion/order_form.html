@@ -1,0 +1,207 @@
+{% extends "base.html" %}{% load gestion_extras %}
+{% block title %}{% if editing %}Editar{% else %}Nueva{% endif %} orden | LujoShop{% endblock %}
+{% block page_title %}{% if editing %}Editar orden {{ numero_orden }}{% else %}Nueva orden {{ numero_orden }}{% endif %}{% endblock %}
+{% block page_description %}Agrega los productos; los totales, costos y ganancias se calculan automáticamente{% endblock %}
+{% block content %}
+<form method="post" class="order-editor" id="order-form" novalidate>{% csrf_token %}
+  {{ product_data|json_script:"product-data" }}
+  {% if historical_cost_only %}<div class="alert alert-info"><i class="bi bi-info-circle"></i> Esta orden pertenece a un mes anterior. Puedes modificar el costo y el flete, tanto en USD como en COP, de sus productos.</div>{% endif %}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% if formset.non_form_errors %}<div class="alert alert-danger">{{ formset.non_form_errors }}</div>{% endif %}
+
+  <section class="content-card mb-4">
+    <div class="section-heading"><div><span class="step-number">1</span><strong>Datos básicos</strong></div><span class="order-number">Orden N.º {{ numero_orden }}</span></div>
+    <div class="trm-panel"><div><strong><i class="bi bi-currency-dollar"></i> TRM de referencia (opcional)</strong><small id="trm-status">No modifica los costos ni los fletes de los productos.</small></div><button type="button" class="btn btn-sm btn-outline-danger" id="load-trm"><i class="bi bi-arrow-clockwise"></i> Consultar TRM</button></div>
+    <div class="row g-3">{% for field in form %}<div class="{% if field.name == 'observaciones' %}col-12{% else %}col-12 col-md-6 col-xl-4{% endif %}"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>{% endfor %}</div>
+  </section>
+
+  <section class="content-card mb-4">
+    <div class="order-product-source{% if historical_cost_only %} d-none{% endif %}">
+      <div><small>¿QUÉ PRODUCTO VAS A AGREGAR?</small><strong>Selecciona una opción para continuar</strong></div>
+      <button class="btn btn-outline-dark" type="button" id="choose-inventory-product"><i class="bi bi-box-seam"></i> Producto del inventario</button>
+      <button class="btn btn-danger" type="button" data-bs-toggle="modal" data-bs-target="#new-product-modal"><i class="bi bi-plus-circle"></i> Producto nuevo</button>
+    </div>
+    {{ formset.management_form }}
+    <div id="product-workspace" class="{% if not editing and not formset.is_bound %}d-none{% endif %}">
+    <div class="section-heading"><div><span class="step-number">2</span><strong>Productos de la orden</strong></div>{% if not historical_cost_only %}<button class="btn btn-sm btn-outline-dark" type="button" id="add-product"><i class="bi bi-plus-lg"></i> Agregar otra línea</button>{% endif %}</div>
+    <div id="product-forms">
+      {% for detail_form in formset %}
+        <div class="product-line {% if detail_form.DELETE.value %}d-none{% endif %}">
+          {% for hidden in detail_form.hidden_fields %}{{ hidden }}{% endfor %}
+          {% with product_field=detail_form|form_field:"producto" %}<div class="product-field product-select"><div class="inventory-product-control{% if detail_form.instance.origen_producto == 'EXTERNO' %} d-none{% endif %}"><label>Producto del inventario</label>{{ product_field }}</div><div class="external-product-note{% if detail_form.instance.origen_producto != 'EXTERNO' %} d-none{% endif %}"><i class="bi bi-box-seam"></i><div><span>Producto externo</span><strong class="external-product-name">{{ detail_form.instance.descripcion_producto }}</strong></div></div>{% for error in product_field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>{% endwith %}
+          <div class="product-field product-qty"><label>Cantidad</label>{{ detail_form.cantidad }}{% for error in detail_form.cantidad.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
+          <div class="product-field product-cost-usd"><label>Costo (USD)</label>{{ detail_form.costo_unitario_dolares }}{% for error in detail_form.costo_unitario_dolares.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
+          <div class="product-field product-cost-cop"><label>Costo (COP)</label>{{ detail_form.costo_unitario_pesos }}{% for error in detail_form.costo_unitario_pesos.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
+          <div class="product-field product-freight-usd"><label>Flete (USD)</label>{{ detail_form.flete_unitario_dolares }}{% for error in detail_form.flete_unitario_dolares.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
+          <div class="product-field product-freight-cop"><label>Flete (COP)</label>{{ detail_form.flete_unitario_pesos }}{% for error in detail_form.flete_unitario_pesos.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
+          <div class="product-field product-sale"><label>Precio de venta (COP)</label>{{ detail_form.precio_venta_unitario }}{% for error in detail_form.precio_venta_unitario.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
+          <div class="line-total"><small>Total</small><strong>$ 0</strong></div>
+          <div class="delete-field d-none">{{ detail_form.DELETE }}</div>
+          {% if not historical_cost_only %}<button type="button" class="btn btn-sm btn-outline-danger remove-product" title="Quitar producto"><i class="bi bi-trash"></i></button>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <template id="empty-product-form">
+      <div class="product-line">
+        {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+        <div class="product-field product-select"><div class="inventory-product-control"><label>Producto del inventario</label>{{ formset.empty_form|form_field:"producto" }}</div><div class="external-product-note d-none"><i class="bi bi-box-seam"></i><div><span>Producto externo</span><strong class="external-product-name"></strong></div></div></div>
+        <div class="product-field product-qty"><label>Cantidad</label>{{ formset.empty_form.cantidad }}</div>
+        <div class="product-field product-cost-usd"><label>Costo (USD)</label>{{ formset.empty_form.costo_unitario_dolares }}</div>
+        <div class="product-field product-cost-cop"><label>Costo (COP)</label>{{ formset.empty_form.costo_unitario_pesos }}</div>
+        <div class="product-field product-freight-usd"><label>Flete (USD)</label>{{ formset.empty_form.flete_unitario_dolares }}</div>
+        <div class="product-field product-freight-cop"><label>Flete (COP)</label>{{ formset.empty_form.flete_unitario_pesos }}</div>
+        <div class="product-field product-sale"><label>Precio de venta (COP)</label>{{ formset.empty_form.precio_venta_unitario }}</div>
+        <div class="line-total"><small>Total</small><strong>$ 0</strong></div>
+        <div class="delete-field d-none">{{ formset.empty_form.DELETE }}</div>
+        <button type="button" class="btn btn-sm btn-outline-danger remove-product" title="Quitar producto"><i class="bi bi-trash"></i></button>
+      </div>
+    </template>
+    </div>
+  </section>
+
+  <section class="content-card order-summary mb-4">
+    <div class="section-heading"><div><span class="step-number">3</span><strong>Resumen automático</strong></div><small>Estos valores se confirman al guardar</small></div>
+    <div class="summary-grid">
+      <div><span>Subtotal productos</span><strong id="summary-subtotal">$ 0</strong></div>
+      <div><span>Costo de productos</span><strong id="summary-product-cost">$ 0</strong></div>
+      <div><span>Fletes por producto</span><strong id="summary-product-freight">$ 0</strong></div>
+      <div><span>Otros costos</span><strong id="summary-other">$ 0</strong></div>
+      <div><span>Descuento</span><strong id="summary-discount">$ 0</strong></div>
+      <div class="summary-total"><span>Total de venta</span><strong id="summary-total">$ 0</strong></div>
+      <div><span>Saldo estimado</span><strong id="summary-balance">$ 0</strong></div>
+      <div><span>Ganancia bruta estimada</span><strong id="summary-profit">$ 0</strong></div>
+    </div>
+  </section>
+
+  <div class="form-actions order-actions"><a class="btn btn-light" href="{% url 'record_list' 'ordenes' %}">Cancelar</a><button class="btn btn-gold" type="submit"><i class="bi bi-check-lg"></i> Guardar orden</button></div>
+</form>
+
+<div class="modal fade" id="new-product-modal" tabindex="-1" aria-labelledby="new-product-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content quick-product-modal">
+    <div class="modal-header"><div><small>NUEVO PRODUCTO</small><h2 class="modal-title" id="new-product-title">Datos básicos del producto</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+    <form id="quick-product-form">
+      <div class="modal-body">
+        <div class="alert alert-danger d-none" id="quick-product-error"></div>
+        <p class="quick-product-help"><i class="bi bi-info-circle"></i> Sin costos, el producto queda únicamente en esta factura. Cuando registres su costo, pasará al inventario como reservado para el cliente.</p>
+        <div class="row g-3">
+          <div class="col-12 col-md-7"><label class="form-label" for="quick-name">Nombre *</label><input class="form-control" id="quick-name" name="nombre" maxlength="200" required></div>
+          <div class="col-12 col-md-5"><label class="form-label" for="quick-category">Categoría *</label><select class="form-select" id="quick-category" name="categoria" required><option value="">Selecciona una categoría</option>{% for category in product_categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}</select></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="quick-brand">Marca</label><input class="form-control" id="quick-brand" name="marca" maxlength="100"></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="quick-model">Modelo</label><input class="form-control" id="quick-model" name="modelo" maxlength="100"></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="quick-start-year">Año inicial</label><input class="form-control" id="quick-start-year" name="anio_inicio" type="number" min="1900" max="2100"></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="quick-end-year">Año final</label><input class="form-control" id="quick-end-year" name="anio_fin" type="number" min="1900" max="2100"></div>
+          <div class="col-12"><label class="form-label" for="quick-description">Descripción</label><textarea class="form-control" id="quick-description" name="descripcion" rows="3"></textarea></div>
+          <div class="col-12"><hr class="my-1"><strong class="quick-values-title">Valores para esta orden</strong></div>
+          <div class="col-12 col-md-4"><label class="form-label" for="quick-quantity">Cantidad *</label><input class="form-control" id="quick-quantity" type="number" min="1" step="1" value="1" required></div>
+          <div class="col-12 col-md-4"><label class="form-label" for="quick-cost-usd">Costo (USD)</label><input class="form-control" id="quick-cost-usd" type="number" min="0" step="0.01" placeholder="Ingresa el costo"></div>
+          <div class="col-12 col-md-4"><label class="form-label" for="quick-cost-cop">Costo (COP)</label><input class="form-control" id="quick-cost-cop" type="number" min="0" step="1" placeholder="Ingresa el costo"></div>
+          <div class="col-12 col-md-4"><label class="form-label" for="quick-freight-usd">Flete (USD)</label><input class="form-control" id="quick-freight-usd" type="number" min="0" step="0.01" placeholder="Opcional"></div>
+          <div class="col-12 col-md-4"><label class="form-label" for="quick-freight-cop">Flete (COP)</label><input class="form-control" id="quick-freight-cop" type="number" min="0" step="1" placeholder="Opcional"></div>
+          <div class="col-12 col-md-4"><label class="form-label" for="quick-sale-price">Precio de venta (COP) *</label><input class="form-control" id="quick-sale-price" type="number" min="0" step="1" value="0" required></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-danger" id="save-quick-product" type="submit"><i class="bi bi-check-lg"></i> Agregar a la factura</button></div>
+    </form>
+  </div></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const products = JSON.parse(document.getElementById('product-data').textContent);
+  const container = document.getElementById('product-forms');
+  const workspace = document.getElementById('product-workspace');
+  const totalForms = document.getElementById('id_productos-TOTAL_FORMS');
+  const money = value => '$ ' + Math.round(value || 0).toLocaleString('es-CO');
+  const number = id => parseFloat(document.getElementById(id)?.value) || 0;
+
+  function activeLines() { return [...container.querySelectorAll('.product-line')].filter(line => !line.classList.contains('d-none')); }
+  function calculate() {
+    let subtotal = 0, productCost = 0, productFreight = 0;
+    activeLines().forEach(line => {
+      const qty = parseFloat(line.querySelector('[name$="-cantidad"]')?.value) || 0;
+      const price = parseFloat(line.querySelector('[name$="-precio_venta_unitario"]')?.value) || 0;
+      const cost = parseFloat(line.querySelector('[name$="-costo_unitario_pesos"]')?.value) || 0;
+      const itemFreight = parseFloat(line.querySelector('[name$="-flete_unitario_pesos"]')?.value) || 0;
+      const total = qty * price;
+      subtotal += total;
+      productCost += qty * cost;
+      productFreight += qty * itemFreight;
+      line.querySelector('.line-total strong').textContent = money(total);
+    });
+    const freight = 0;
+    const other = number('id_otros_costos_pesos');
+    const discount = number('id_descuento');
+    const total = Math.max(0, subtotal - discount);
+    document.getElementById('summary-subtotal').textContent = money(subtotal);
+    document.getElementById('summary-product-cost').textContent = money(productCost);
+    document.getElementById('summary-product-freight').textContent = money(productFreight);
+    document.getElementById('summary-other').textContent = money(other);
+    document.getElementById('summary-discount').textContent = money(discount);
+    document.getElementById('summary-total').textContent = money(total);
+    document.getElementById('summary-balance').textContent = money(total);
+    document.getElementById('summary-profit').textContent = money(total - productCost - productFreight - freight - other);
+  }
+  function bindLine(line) {
+    const select = line.querySelector('[name$="-producto"]');
+    const price = line.querySelector('[name$="-precio_venta_unitario"]');
+    const costUsd = line.querySelector('[name$="-costo_unitario_dolares"]');
+    const costCop = line.querySelector('[name$="-costo_unitario_pesos"]');
+    const freightUsd = line.querySelector('[name$="-flete_unitario_dolares"]');
+    const freightCop = line.querySelector('[name$="-flete_unitario_pesos"]');
+    select?.addEventListener('change', () => { if (products[select.value]) { price.value = Math.round(Number(products[select.value].precio)); costCop.value = Math.round(Number(products[select.value].costo)); costUsd.value=Number(products[select.value].costo_usd||0).toFixed(2); freightUsd.value=0; freightCop.value=0; } calculate(); });
+    select?.addEventListener('change', () => { const origin=line.querySelector('[name$="-origen_producto"]'); if(origin) origin.value='INVENTARIO'; line.querySelector('.inventory-product-control')?.classList.remove('d-none'); line.querySelector('.external-product-note')?.classList.add('d-none'); });
+    line.querySelectorAll('input, select').forEach(input => input.addEventListener('input', calculate));
+    line.querySelector('.remove-product')?.addEventListener('click', () => {
+      const deletion = line.querySelector('[name$="-DELETE"]');
+      if (deletion) { deletion.checked = true; line.classList.add('d-none'); } else { line.remove(); }
+      calculate();
+    });
+  }
+  container.querySelectorAll('.product-line').forEach(bindLine);
+  function addProductLine() {
+    workspace.classList.remove('d-none');
+    const index = Number(totalForms.value);
+    const html = document.getElementById('empty-product-form').innerHTML.replaceAll('__prefix__', index);
+    container.insertAdjacentHTML('beforeend', html);
+    totalForms.value = index + 1;
+    bindLine(container.lastElementChild);
+    return container.lastElementChild;
+  }
+  document.getElementById('add-product').addEventListener('click', addProductLine);
+  document.getElementById('choose-inventory-product').addEventListener('click', () => {
+    workspace.classList.remove('d-none');
+    let line = activeLines().find(item => !item.querySelector('[name$="-producto"]')?.value);
+    if (!line) line = addProductLine();
+    line.querySelector('[name$="-producto"]')?.focus();
+    line.scrollIntoView({behavior:'smooth', block:'center'});
+  });
+
+  const quickForm=document.getElementById('quick-product-form'), quickError=document.getElementById('quick-product-error'), quickButton=document.getElementById('save-quick-product');
+  const modalValue=id=>document.getElementById(id);
+  quickForm.addEventListener('submit', event => {
+    event.preventDefault(); quickError.classList.add('d-none');
+    let line=activeLines().find(item=>!item.querySelector('[name$="-producto"]')?.value && !item.querySelector('[name$="-descripcion_producto"]')?.value); if(!line) line=addProductLine();
+    workspace.classList.remove('d-none');
+    const setValue=(field,value)=>{const input=line.querySelector(`[name$="-${field}"]`);if(input)input.value=value??'';};
+    setValue('producto',''); setValue('origen_producto','EXTERNO'); setValue('descripcion_producto',modalValue('quick-name').value.trim()); setValue('categoria_producto',modalValue('quick-category').value.trim());
+    setValue('marca_producto',modalValue('quick-brand').value.trim()); setValue('modelo_producto',modalValue('quick-model').value.trim());
+    setValue('anio_inicio_producto',modalValue('quick-start-year').value); setValue('anio_fin_producto',modalValue('quick-end-year').value);
+    const values={cantidad:'quick-quantity',costo_unitario_dolares:'quick-cost-usd',costo_unitario_pesos:'quick-cost-cop',flete_unitario_dolares:'quick-freight-usd',flete_unitario_pesos:'quick-freight-cop',precio_venta_unitario:'quick-sale-price'};
+    Object.entries(values).forEach(([field,id])=>setValue(field,modalValue(id).value||0));
+    line.querySelector('.inventory-product-control')?.classList.add('d-none'); const note=line.querySelector('.external-product-note'); note?.classList.remove('d-none'); const name=line.querySelector('.external-product-name'); if(name)name.textContent=modalValue('quick-name').value.trim();
+    calculate(); bootstrap.Modal.getInstance(document.getElementById('new-product-modal')).hide(); quickForm.reset();
+    line.scrollIntoView({behavior:'smooth',block:'center'}); line.querySelector('[name$="-cantidad"]')?.focus();
+  });
+  ['id_tasa_dolar','id_otros_costos_pesos','id_descuento'].forEach(id => document.getElementById(id)?.addEventListener('input', calculate));
+
+  const trmButton = document.getElementById('load-trm'), trmStatus = document.getElementById('trm-status');
+  trmButton.addEventListener('click', async () => {
+    trmButton.disabled = true; trmStatus.textContent = 'Consultando la fuente oficial…';
+    try { const response = await fetch('{% url "trm_actual" %}'); const data = await response.json(); if (!response.ok) throw new Error(data.error); document.getElementById('id_tasa_dolar').value = Math.round(Number(data.valor)); trmStatus.textContent = `TRM vigente: ${money(data.valor)} COP`; calculate(); }
+    catch (error) { trmStatus.textContent = error.message || 'No se pudo consultar la TRM.'; }
+    finally { trmButton.disabled = false; }
+  });
+  calculate();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% load gestion_extras %}
+{% block title %}Registrar entrega | LujoShop{% endblock %}
+{% block page_title %}Entrega de la orden {{ order.numero_orden }}{% endblock %}
+{% block page_description %}Marca únicamente lo que el cliente recibe hoy{% endblock %}
+{% block content %}
+<form method="post" class="content-card delivery-card">{% csrf_token %}
+  <div class="delivery-header">
+    <div><small>CLIENTE</small><strong>{{ order.cliente }}</strong></div>
+    <div><small>ESTADO</small><strong>{{ order.estado }}</strong></div>
+    <div><small>TOTAL</small><strong>{{ order.total_venta|money_cop }}</strong></div>
+    <div><small>SALDO PENDIENTE</small><strong class="text-danger">{{ order.saldo_pendiente|money_cop }}</strong></div>
+  </div>
+
+  <h2 class="delivery-title"><i class="bi bi-box-seam"></i> Productos de esta entrega</h2>
+  <div class="table-responsive">
+    <table class="table align-middle delivery-table">
+      <thead><tr><th>Producto</th><th>Solicitado</th><th>Entregado</th><th>Pendiente</th><th>Entregar ahora</th></tr></thead>
+      <tbody>{% for detail in details %}
+        <tr>
+          <td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.producto %}<small>Stock actual: {{ detail.producto.cantidad_disponible }}</small>{% endif %}</td>
+          <td>{{ detail.cantidad }}</td>
+          <td><span class="delivery-done">{{ detail.cantidad_entregada }}</span></td>
+          <td><strong>{{ detail.cantidad|subtract:detail.cantidad_entregada }}</strong></td>
+          <td>
+            {% if detail.cantidad_entregada >= detail.cantidad %}
+              <select class="form-select form-select-sm delivery-status" disabled><option>Entregado</option></select>
+            {% else %}
+              <select class="form-select form-select-sm delivery-status" name="entregar_{{ detail.pk }}">
+                <option value="0" selected>No entregado</option>
+                <option value="{{ detail.cantidad|subtract:detail.cantidad_entregada }}">Entregado</option>
+              </select>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}<tr><td colspan="5" class="text-center text-muted">Esta orden no tiene productos.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+
+  <h2 class="delivery-title"><i class="bi bi-cash-coin"></i> Abono opcional</h2>
+  <div class="row g-3">
+    <div class="col-12 col-md-4"><label class="form-label" for="abono">Valor recibido (COP)</label><input id="abono" class="form-control" type="number" name="abono" value="0" min="0" max="{{ order.saldo_pendiente }}" step="1"></div>
+    <div class="col-12 col-md-4"><label class="form-label" for="metodo_pago">Método de pago</label><select id="metodo_pago" class="form-select" name="metodo_pago"><option value="">Seleccionar</option><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Nequi</option><option>Daviplata</option></select></div>
+    <div class="col-12 col-md-4"><label class="form-label" for="referencia">Referencia</label><input id="referencia" class="form-control" name="referencia" maxlength="150" placeholder="Opcional"></div>
+  </div>
+  <p class="delivery-note"><i class="bi bi-info-circle"></i> Al confirmar, únicamente los productos marcados como “Entregado” se descuentan del inventario. Los demás seguirán pendientes.</p>
+  <div class="form-actions"><a class="btn btn-light" href="{% url 'record_list' 'ordenes' %}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Confirmar entrega</button></div>
+</form>
+{% endblock %}

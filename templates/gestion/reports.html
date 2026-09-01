@@ -1,0 +1,91 @@
+{% extends "base.html" %}{% load gestion_extras l10n %}
+{% block title %}Reportes | LujoShop{% endblock %}
+{% block page_title %}Reportes{% endblock %}
+{% block page_description %}Radiografía visual del negocio para tomar mejores decisiones{% endblock %}
+{% block content %}
+{% localize off %}
+<div class="reports-dashboard">
+  <section class="reports-hero">
+    <div><span>REPORTE EJECUTIVO</span><h2>{{ period_label }}</h2><p>Ventas, rentabilidad, inventario, clientes y equipo comercial en una sola vista.</p></div>
+    <button class="btn reports-period-button" type="button" data-bs-toggle="modal" data-bs-target="#reportsPeriodModal"><i class="bi bi-calendar-range"></i> Seleccionar período</button>
+  </section>
+
+  {% if is_general %}<div class="report-scope-note"><i class="bi bi-info-circle"></i><span>Los resultados comerciales incluyen todo el historial. El inventario corresponde a las existencias disponibles actualmente.</span></div>{% endif %}
+
+  <section class="executive-kpis report-kpis">
+    <article class="executive-kpi kpi-red"><i class="bi bi-currency-dollar"></i><div><span>Ventas totales</span><strong>{{ total_sales|money_cop }}</strong><small>{% if has_comparison and sales_variation.value != None %}<b class="variation-{{ sales_variation.direction }}"><i class="bi bi-{{ sales_variation.icon }}"></i> {{ sales_variation.value }}%</b> frente al período anterior{% else %}{{ orders_count }} órdenes analizadas{% endif %}</small></div></article>
+    <article class="executive-kpi kpi-green"><i class="bi bi-graph-up-arrow"></i><div><span>Utilidad neta</span><strong>{{ total_profit|money_cop }}</strong><small>{% if has_comparison and profit_variation.value != None %}<b class="variation-{{ profit_variation.direction }}"><i class="bi bi-{{ profit_variation.icon }}"></i> {{ profit_variation.value }}%</b> frente al período anterior{% else %}Margen estimado {{ margin|floatformat:1 }}%{% endif %}</small></div></article>
+    <article class="executive-kpi kpi-orange"><i class="bi bi-receipt"></i><div><span>Órdenes</span><strong>{{ orders_count }}</strong><small>{% if has_comparison and orders_variation.value != None %}<b class="variation-{{ orders_variation.direction }}"><i class="bi bi-{{ orders_variation.icon }}"></i> {{ orders_variation.value }}%</b> frente al período anterior{% else %}{{ products_sold }} productos vendidos{% endif %}</small></div></article>
+    <article class="executive-kpi kpi-blue"><i class="bi bi-basket"></i><div><span>Ticket promedio</span><strong>{{ ticket_average|money_cop }}</strong><small>Promedio por orden</small></div></article>
+    <article class="executive-kpi"><i class="bi bi-percent"></i><div><span>Margen neto</span><strong>{{ margin|floatformat:1 }}%</strong><small>Utilidad frente a ventas</small></div></article>
+    <article class="executive-kpi"><i class="bi bi-people"></i><div><span>Clientes compradores</span><strong>{{ active_clients }}</strong><small>Clientes distintos en el período</small></div></article>
+    <article class="executive-kpi"><i class="bi bi-wallet2"></i><div><span>Cartera del período</span><strong>{{ pending_balance|money_cop }}</strong><small>{{ total_paid|money_cop }} abonados</small></div></article>
+    <article class="executive-kpi"><i class="bi bi-box-seam"></i><div><span>Inventario actual</span><strong>{{ inventory_value|money_cop }}</strong><small>{{ inventory_units }} unidades disponibles</small></div></article>
+  </section>
+
+  <section class="dashboard-grid dashboard-grid-main">
+    <article class="dash-panel dash-panel-wide">
+      <header class="dash-panel-header"><div><small>EVOLUCIÓN {{ timeline_granularity|upper }}</small><h2>Ventas y utilidad</h2></div><div class="dash-legend"><span><i class="legend-sales"></i>Ventas</span><span><i class="legend-profit"></i>Utilidad</span></div></header>
+      {% if timeline %}<div class="timeline-chart report-timeline {% if timeline_granularity == 'diaria' %}report-timeline--daily{% endif %}">{% for item in timeline %}<div class="timeline-column"><div class="timeline-bars"><i class="timeline-sale" style="height:{{ item.sales_height|unlocalize }}%" title="Ventas: {{ item.sales|money_cop }}"></i><i class="timeline-profit" style="height:{{ item.profit_height|unlocalize }}%" title="Utilidad: {{ item.profit|money_cop }}"></i></div><span>{% if timeline_granularity == 'diaria' %}Día {% endif %}{{ item.label }}</span></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-bar-chart"></i><span>No hay ventas para el período seleccionado.</span></div>{% endif %}
+    </article>
+    <article class="dash-panel">
+      <header class="dash-panel-header"><div><small>DISTRIBUCIÓN</small><h2>Estado de las órdenes</h2></div></header>
+      {% if status_chart %}<div class="status-layout"><div class="status-donut-wrap"><div class="css-donut" style="background:conic-gradient({{ status_gradient }})"><div><strong>{{ status_total }}</strong><small>órdenes</small></div></div><span>Estado del período</span></div><div class="status-list">{% for item in status_chart %}<div class="status-item"><div class="status-item-heading"><span><i style="background:{{ item.color }}"></i>{{ item.label }}</span><strong>{{ item.value }} <small>{{ item.percent }}%</small></strong></div><div class="status-track"><i style="width:{{ item.percent|unlocalize }}%;background:{{ item.color }}"></i></div></div>{% endfor %}</div></div>{% else %}<div class="dash-empty"><i class="bi bi-pie-chart"></i><span>Sin órdenes en este período.</span></div>{% endif %}
+    </article>
+  </section>
+
+  <section class="dashboard-grid dashboard-grid-even">
+    <article class="dash-panel"><header class="dash-panel-header"><div><small>DESEMPEÑO COMERCIAL</small><h2>Categorías con mayores ventas</h2></div></header>{% if top_products %}<div class="rank-bars report-ranking">{% for item in top_products %}<div><div><span><b>{{ forloop.counter }}</b>{{ item.categoria_reporte }}</span><strong>{{ item.sales|money_cop }}</strong></div><div class="rank-track"><i style="width:{{ item.width }}%"></i></div><small>{{ item.units }} unidades · Utilidad {{ item.profit|money_cop }}</small></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-bag"></i><span>No hay categorías vendidas.</span></div>{% endif %}</article>
+    <article class="dash-panel"><header class="dash-panel-header"><div><small>RENTABILIDAD</small><h2>Categorías que más utilidad generan</h2></div></header>{% if profitable_products %}<div class="rank-bars report-ranking profit-ranking">{% for item in profitable_products %}<div><div><span><b>{{ forloop.counter }}</b>{{ item.categoria_reporte }}</span><strong>{{ item.profit|money_cop }}</strong></div><div class="rank-track"><i style="width:{{ item.width }}%"></i></div><small>{{ item.units }} unidades · Ventas {{ item.sales|money_cop }}</small></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-graph-up"></i><span>Sin rentabilidad registrada.</span></div>{% endif %}</article>
+  </section>
+
+  <section class="dashboard-grid dashboard-grid-even">
+    <article class="dash-panel"><header class="dash-panel-header"><div><small>MERCADO</small><h2>Ventas por marca</h2></div></header>{% if brands %}<div class="report-horizontal-bars">{% for item in brands %}<div><div><span>{{ item.marca_reporte }}</span><strong>{{ item.sales|money_cop }}</strong></div><div><i style="width:{{ item.width }}%"></i></div><small>{{ item.units }} unidades · {{ item.profit|money_cop }} de utilidad</small></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-tags"></i><span>Sin información de marcas.</span></div>{% endif %}</article>
+    <article class="dash-panel"><header class="dash-panel-header"><div><small>OPORTUNIDADES</small><h2>Vehículos que generan ventas</h2></div></header>{% if vehicles %}<div class="report-horizontal-bars vehicle-bars">{% for item in vehicles %}<div><div><span>{{ item.marca_reporte }} {{ item.modelo_reporte }}</span><strong>{{ item.sales|money_cop }}</strong></div><div><i style="width:{{ item.width }}%"></i></div><small>{{ item.units }} unidades</small></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-car-front"></i><span>Sin modelos asociados a ventas.</span></div>{% endif %}</article>
+  </section>
+
+  <section class="dashboard-grid dashboard-grid-even">
+    <article class="dash-panel"><header class="dash-panel-header"><div><small>EQUIPO</small><h2>Resultados por vendedor</h2></div></header>{% if sellers_chart %}<div class="rank-bars sellers-rank report-ranking">{% for item in sellers_chart %}<div><div><span><b>{{ forloop.counter }}</b>{{ item.vendedor__nombre }}</span><strong>{{ item.sales|money_cop }}</strong></div><div class="rank-track"><i style="width:{{ item.width }}%"></i></div><small>{{ item.orders }} órdenes · Utilidad {{ item.profit|money_cop }} · Comisión {{ item.commission|money_cop }}</small></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-person-badge"></i><span>Sin vendedores asociados.</span></div>{% endif %}</article>
+    <article class="dash-panel"><header class="dash-panel-header"><div><small>CLIENTES</small><h2>Ventas por ciudad</h2></div></header>{% if cities %}<div class="report-horizontal-bars city-report-bars">{% for item in cities %}<div><div><span>{{ item.cliente__ciudad|default:'Sin ciudad' }}</span><strong>{{ item.sales|money_cop }}</strong></div><div><i style="width:{{ item.width }}%"></i></div><small>{{ item.clients }} clientes</small></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-geo-alt"></i><span>Sin ciudades registradas en las ventas.</span></div>{% endif %}</article>
+  </section>
+
+  <section class="dashboard-grid dashboard-grid-main">
+    <article class="dash-panel dash-panel-wide"><header class="dash-panel-header"><div><small>MOVIMIENTO REAL</small><h2>Flujo de dinero</h2></div></header><div class="report-cash-grid"><div><span>Dinero que entró</span><strong class="text-success">{{ income|money_cop }}</strong><div><i class="cash-income" style="width:{{ income_width }}%"></i></div></div><div><span>Dinero que salió</span><strong class="text-danger">{{ expenses|money_cop }}</strong><div><i class="cash-expense" style="width:{{ expense_width }}%"></i></div></div><footer><span>Flujo neto del período</span><strong>{{ cash_balance|money_cop }}</strong></footer></div></article>
+    <article class="dash-panel"><header class="dash-panel-header"><div><small>ESTADO ACTUAL</small><h2>Inventario</h2></div></header><div class="report-inventory-main"><strong>{{ inventory_value|money_cop }}</strong><span>Valor estimado del inventario</span></div><div class="report-stock-cards"><div><strong>{{ inventory_products }}</strong><span>Referencias</span></div><div class="stock-warning"><strong>{{ low_stock_count }}</strong><span>Stock bajo</span></div><div class="stock-danger"><strong>{{ exhausted_count }}</strong><span>Agotadas</span></div></div></article>
+  </section>
+
+  <section class="dash-panel report-profit-panel"><header class="dash-panel-header"><div><small>¿CUÁNTO QUEDÓ?</small><h2>Resumen de rentabilidad</h2></div></header><div class="report-profit-flow"><div><span>Ventas</span><strong>{{ total_sales|money_cop }}</strong></div><i class="bi bi-dash-lg"></i><div><span>Costos totales</span><strong>{{ total_costs|money_cop }}</strong></div><i class="bi bi-dash-lg"></i><div><span>Comisiones</span><strong>{{ commissions|money_cop }}</strong></div><i class="bi bi-equals"></i><div class="profit-result"><span>Utilidad neta estimada</span><strong>{{ total_profit|money_cop }}</strong></div></div><p>Por cada $100.000 vendidos quedaron aproximadamente <b>{{ margin|floatformat:0 }}%</b> como utilidad neta estimada.</p></section>
+</div>
+
+<div class="modal fade" id="reportsPeriodModal" tabindex="-1" aria-labelledby="reportsPeriodModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content reports-period-dialog">
+    <div class="modal-header"><div><small>PERSONALIZAR ANÁLISIS</small><h2 id="reportsPeriodModalLabel">Selecciona uno o varios meses</h2></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+    <div class="modal-body">
+      <div class="report-quick-periods"><button type="button" data-range="current">Mes actual</button><button type="button" data-range="3">Últimos 3 meses</button><button type="button" data-range="6">Últimos 6 meses</button><button type="button" data-range="year">Año actual</button><a href="{% url 'reports_dashboard' %}">Vista general</a></div>
+      <div class="report-year-nav"><button type="button" id="report-year-prev"><i class="bi bi-chevron-left"></i></button><strong id="report-picker-year"></strong><button type="button" id="report-year-next"><i class="bi bi-chevron-right"></i></button></div>
+      <form method="get" action="{% url 'reports_dashboard' %}" id="reports-period-form"><input type="hidden" name="meses" id="reports-months-value"><div class="report-month-grid" id="reports-month-grid"></div><div class="report-period-actions"><span id="report-selection-count">0 meses seleccionados</span><button class="btn btn-danger" type="submit">Ver reporte</button></div></form>
+    </div>
+  </div></div>
+</div>
+
+{{ selected_periods|json_script:"selected-report-periods" }}
+<script>
+(() => {
+  const names = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const selected = new Set(JSON.parse(document.getElementById('selected-report-periods').textContent));
+  const grid = document.getElementById('reports-month-grid');
+  const yearText = document.getElementById('report-picker-year');
+  const value = document.getElementById('reports-months-value');
+  const count = document.getElementById('report-selection-count');
+  const now = new Date(); let year = selected.size ? Number([...selected].sort()[0].slice(0,4)) : now.getFullYear();
+  const sync = () => { value.value = [...selected].sort().join(','); count.textContent = `${selected.size} ${selected.size === 1 ? 'mes seleccionado' : 'meses seleccionados'}`; };
+  const render = () => { yearText.textContent = year; grid.innerHTML = names.map((name,index) => { const period=`${year}-${String(index+1).padStart(2,'0')}`; return `<button type="button" data-period="${period}" class="${selected.has(period)?'selected':''}"><i class="bi bi-calendar3"></i><span>${name}</span></button>`; }).join(''); };
+  grid.addEventListener('click', event => { const button=event.target.closest('[data-period]'); if(!button)return; selected.has(button.dataset.period)?selected.delete(button.dataset.period):selected.add(button.dataset.period); render(); sync(); });
+  document.getElementById('report-year-prev').addEventListener('click',()=>{year--;render();}); document.getElementById('report-year-next').addEventListener('click',()=>{year++;render();});
+  document.querySelectorAll('[data-range]').forEach(button=>button.addEventListener('click',()=>{ selected.clear(); const range=button.dataset.range; const amount=range==='current'?1:(range==='year'?now.getMonth()+1:Number(range)); for(let offset=0;offset<amount;offset++){const date=new Date(now.getFullYear(),now.getMonth()-offset,1);selected.add(`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`);} year=now.getFullYear();render();sync(); }));
+  document.getElementById('reports-period-form').addEventListener('submit',event=>{if(!selected.size){event.preventDefault();document.getElementById('reportsPeriodModalLabel').textContent='Selecciona al menos un mes';}});
+  render(); sync();
+})();
+</script>
+{% endlocalize %}
+{% endblock %}

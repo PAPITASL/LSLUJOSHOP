@@ -1,0 +1,198 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>{% block title %}LujoShop{% endblock %}</title>
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{% static 'css/styles.css' %}?v=adaptive-charts-20260828-1"
+    >
+</head>
+
+<body>
+    <div class="app-layout">
+        <header class="app-navbar">
+            <a class="navbar-brand-logo" href="{% url 'dashboard' %}" aria-label="Ir al inicio">
+                <img src="{% static 'img/lg-transparent-final.png' %}?v=5" alt="Logo de LujoShop">
+            </a>
+            <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="app-nav"><i class="bi bi-list"></i></button>
+            <nav class="app-nav" id="app-nav">
+                <a href="{% url 'dashboard' %}">
+                    <i class="bi bi-grid"></i>
+                    Dashboard
+                </a>
+
+                <a href="{% url 'record_list' 'productos' %}">
+                    <i class="bi bi-box-seam"></i>
+                    Productos
+                </a>
+
+                <a href="{% url 'record_list' 'clientes' %}">
+                    <i class="bi bi-people"></i>
+                    Clientes
+                </a>
+
+                <a href="{% url 'record_list' 'vendedores' %}">
+                    <i class="bi bi-person-badge"></i>
+                    Vendedores
+                </a>
+
+                <button type="button" class="orders-nav-button" data-bs-toggle="modal" data-bs-target="#orderMonthModal">
+                    <i class="bi bi-receipt"></i>
+                    Órdenes
+                </button>
+
+                <a href="{% url 'reports_dashboard' %}">
+                    <i class="bi bi-bar-chart-line"></i>
+                    Reportes
+                </a>
+
+                <a href="{% url 'record_list' 'comisiones' %}">
+                    <i class="bi bi-cash-stack"></i>
+                    Comisiones
+                </a>
+
+                <a href="{% url 'record_list' 'movimientos' %}">
+                    <i class="bi bi-wallet2"></i>
+                    Movimientos
+                </a>
+                <form method="post" action="{% url 'logout' %}" class="navbar-logout">{% csrf_token %}<button type="submit"><i class="bi bi-box-arrow-left"></i><span>Cerrar sesión</span></button></form>
+            </nav>
+        </header>
+
+        <main class="main-content">
+
+            <header class="topbar">
+                <div>
+                    <h1>{% block page_title %}Inicio{% endblock %}</h1>
+                    <p>{% block page_description %}Panel de gestión{% endblock %}</p>
+                </div>
+
+                <div class="user-box">
+                    <div class="user-avatar">
+                        {{ request.user.username|slice:":1"|upper }}
+                    </div>
+
+                    <div>
+                        <strong>{{ request.user.username }}</strong>
+                        <small>Usuario del sistema</small>
+                    </div>
+                </div>
+            </header>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            {% block content %}
+            {% endblock %}
+
+        </main>
+    </div>
+
+    <div class="modal fade" id="orderMonthModal" tabindex="-1" aria-labelledby="orderMonthModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content month-dialog">
+                <div class="modal-header">
+                    <div><small>ÓRDENES POR PERÍODO</small><h2 id="orderMonthModalLabel">Selecciona un mes</h2></div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="month-year-nav">
+                        <button type="button" id="month-year-prev" aria-label="Año anterior"><i class="bi bi-chevron-left"></i></button>
+                        <strong id="month-picker-year"></strong>
+                        <button type="button" id="month-year-next" aria-label="Año siguiente"><i class="bi bi-chevron-right"></i></button>
+                    </div>
+                    <div class="month-grid" id="order-month-grid" data-orders-url="{% url 'record_list' 'ordenes' %}"></div>
+                    <p class="month-dialog-note"><i class="bi bi-info-circle"></i> En meses anteriores puedes registrar entregas, pagos y completar costos o fletes de productos.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+    ></script>
+
+    <script src="{% static 'js/app.js' %}"></script>
+    <script>
+        (() => {
+            const toggle = document.querySelector('.nav-toggle');
+            const nav = document.getElementById('app-nav');
+            toggle?.addEventListener('click', () => {
+                const open = nav.classList.toggle('is-open');
+                toggle.setAttribute('aria-expanded', String(open));
+                toggle.innerHTML = `<i class="bi bi-${open ? 'x-lg' : 'list'}"></i>`;
+            });
+            const current = window.location.pathname.replace(/\/$/, '') || '/';
+            const links = [...(nav?.querySelectorAll('a') || [])];
+            const activeLink = links
+                .filter(link => {
+                    const target = new URL(link.href).pathname.replace(/\/$/, '') || '/';
+                    return current === target || (target !== '/' && current.startsWith(`${target}/`));
+                })
+                .sort((a, b) => new URL(b.href).pathname.length - new URL(a.href).pathname.length)[0];
+            activeLink?.classList.add('active');
+
+            const ordersButton = document.querySelector('.orders-nav-button');
+            if (current.startsWith('/gestion/ordenes') || current.startsWith('/ordenes/')) {
+                ordersButton?.classList.add('active');
+            }
+            const orderModal = document.getElementById('orderMonthModal');
+            orderModal?.addEventListener('show.bs.modal', () => {
+                activeLink?.classList.remove('active');
+                ordersButton?.classList.add('active');
+            });
+            orderModal?.addEventListener('hidden.bs.modal', () => {
+                if (!current.startsWith('/gestion/ordenes') && !current.startsWith('/ordenes/')) {
+                    ordersButton?.classList.remove('active');
+                    activeLink?.classList.add('active');
+                }
+            });
+
+            const monthGrid = document.getElementById('order-month-grid');
+            const yearLabel = document.getElementById('month-picker-year');
+            if (monthGrid && yearLabel) {
+                const names = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                const today = new Date();
+                const selectedPeriod = '{{ periodo|default:""|escapejs }}';
+                let displayedYear = /^\d{4}-\d{2}$/.test(selectedPeriod) ? Number(selectedPeriod.slice(0, 4)) : today.getFullYear();
+                const renderMonths = () => {
+                    yearLabel.textContent = displayedYear;
+                    monthGrid.innerHTML = names.map((name, index) => {
+                        const month = String(index + 1).padStart(2, '0');
+                        const period = `${displayedYear}-${month}`;
+                        const current = displayedYear === today.getFullYear() && index === today.getMonth();
+                        const selected = period === selectedPeriod;
+                        return `<a class="month-option${current ? ' is-current' : ''}${selected ? ' is-selected' : ''}" href="${monthGrid.dataset.ordersUrl}?periodo=${period}"><i class="bi bi-calendar3"></i><span>${name}</span>${current ? '<small>Actual</small>' : ''}</a>`;
+                    }).join('');
+                };
+                document.getElementById('month-year-prev')?.addEventListener('click', () => { displayedYear--; renderMonths(); });
+                document.getElementById('month-year-next')?.addEventListener('click', () => { displayedYear++; renderMonths(); });
+                renderMonths();
+            }
+        })();
+    </script>
+</body>
+</html>

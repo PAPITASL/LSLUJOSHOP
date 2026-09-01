@@ -1,0 +1,65 @@
+{% extends "base.html" %}{% load gestion_extras %}
+{% block title %}{{ config.title }} | LujoShop{% endblock %}
+{% block page_title %}{{ config.title }}{% endblock %}
+{% block page_description %}Consulta y administra los registros{% endblock %}
+{% block content %}
+<div class="content-card">
+  {% if module == 'ordenes' or module == 'movimientos' %}
+  <div class="order-period-heading">
+    <div class="order-period-icon"><i class="bi bi-calendar3"></i></div>
+    <div><span>Período contable</span><strong>Consulta {% if module == 'ordenes' %}las órdenes{% else %}el historial de movimientos{% endif %} de un mes</strong><small>El listado y el reporte PDF corresponden únicamente al mes seleccionado.</small></div>
+  </div>
+  {% endif %}
+  <form method="get" action="{% url 'record_list' module %}" class="live-filter-form" id="live-filter-form">
+  <div class="d-flex justify-content-between align-items-center gap-3 mb-3 flex-wrap">
+    <div class="d-flex gap-2 flex-wrap">{% if module != 'ordenes' or periodo == current_period %}<a class="btn btn-gold btn-sm" href="{% url 'record_create' module %}"><i class="bi bi-plus-lg"></i> {% if module == 'ordenes' %}Nueva orden{% else %}Nuevo registro{% endif %}</a>{% endif %}{% if module == 'ordenes' %}<button class="btn btn-outline-dark btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#orderMonthModal"><i class="bi bi-calendar3"></i> Cambiar mes</button>{% endif %}{% if can_import %}<a class="btn btn-outline-success btn-sm" href="{% url 'excel_import' module %}"><i class="bi bi-file-earmark-excel"></i> Importar Excel</a>{% endif %}<a class="btn btn-outline-danger btn-sm" href="{% url 'module_report' module %}?{{ request.GET.urlencode }}"><i class="bi bi-file-earmark-pdf"></i> Descargar reporte</a></div>
+    <div class="input-group input-group-sm ms-auto live-search" style="max-width: 270px;">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input class="form-control" type="search" name="q" value="{{ query }}" placeholder="Buscar en tiempo real..." autocomplete="off">
+      {% if request.GET %}<a class="btn btn-outline-secondary" href="{% url 'record_list' module %}" title="Restablecer todos los filtros" aria-label="Restablecer filtros"><i class="bi bi-x-lg"></i></a>{% endif %}
+    </div>
+  </div>
+  <div class="advanced-filters" id="advanced-filters">
+    <div class="filter-form">
+      <div class="filter-control{% if module == 'ordenes' or module == 'movimientos' %} order-month-control{% endif %}"><label for="filter-periodo">{% if module == 'ordenes' %}Mes de las órdenes{% elif module == 'movimientos' %}Mes de los movimientos{% else %}Mes del reporte{% endif %}</label><input id="filter-periodo" class="form-control form-control-sm" type="month" name="periodo" value="{{ periodo }}"{% if module == 'ordenes' or module == 'movimientos' %} required{% endif %}></div>
+      {% for control in filter_controls %}
+        <div class="filter-control">
+          <label for="filter-{{ control.name }}">{{ control.label }}</label>
+          {% if control.type == 'date' or control.type == 'number' or control.type == 'text' %}
+            <input id="filter-{{ control.name }}" class="form-control form-control-sm" type="{{ control.type }}" {% if control.type == 'number' %}step="any"{% endif %} name="{{ control.name }}" value="{{ control.value }}">
+          {% else %}
+            <select id="filter-{{ control.name }}" class="form-select form-select-sm" name="{{ control.name }}">
+              <option value="">Todos</option>
+              {% for option_value, option_label in control.options %}<option value="{{ option_value }}" {% if control.value == option_value %}selected{% endif %}>{{ option_label }}</option>{% endfor %}
+            </select>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  </form>
+  <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr>{% for field, label in config.columns %}<th>{{ label }}</th>{% endfor %}<th class="text-end">Acciones</th></tr></thead><tbody>
+  {% for record in records %}<tr>{% for field, label in config.columns %}<td>{{ record|get_attr:field }}</td>{% endfor %}<td class="text-end text-nowrap">{% if module == 'ordenes' %}<a class="btn btn-sm btn-success" href="{% url 'order_delivery' record.pk %}" title="Registrar entrega o pago"><i class="bi bi-check2"></i></a> <a class="btn btn-sm btn-outline-dark" href="{% url 'order_receipt' record.pk %}" title="Descargar recibo PDF"><i class="bi bi-file-earmark-arrow-down"></i></a> <a class="btn btn-sm btn-outline-primary" href="{% url 'record_update' module record.pk %}" title="{% if record.can_manage_order %}Editar orden{% else %}Editar costos de productos{% endif %}"><i class="bi bi-pencil"></i></a> {% if record.can_manage_order %}<a class="btn btn-sm btn-outline-danger" href="{% url 'record_delete' module record.pk %}" title="Eliminar"><i class="bi bi-trash"></i></a>{% endif %}{% else %}<a class="btn btn-sm btn-outline-primary" href="{% url 'record_update' module record.pk %}" title="Editar"><i class="bi bi-pencil"></i></a>{% if module != 'clientes' %} <a class="btn btn-sm btn-outline-danger" href="{% url 'record_delete' module record.pk %}" title="Eliminar"><i class="bi bi-trash"></i></a>{% endif %}{% endif %}</td></tr>{% empty %}<tr><td colspan="10" class="empty-state"><i class="bi bi-inbox"></i><p>No se encontraron registros.</p>{% if module != 'ordenes' or periodo == current_period %}<a href="{% url 'record_create' module %}">Crear el primero</a>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+<script>
+(() => {
+  const form = document.getElementById('live-filter-form');
+  if (!form) return;
+  let timer;
+  const applyFilters = () => {
+    form.classList.add('is-filtering');
+    const params = new URLSearchParams(new FormData(form));
+    [...params.entries()].forEach(([key, value]) => { if (!value.trim()) params.delete(key); });
+    const query = params.toString();
+    window.location.assign(form.action + (query ? `?${query}` : ''));
+  };
+  form.querySelectorAll('select, input[type="date"], input[type="month"]').forEach(control => control.addEventListener('change', applyFilters));
+  form.querySelectorAll('input[type="search"], input[type="text"], input[type="number"]').forEach(control => control.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(applyFilters, 450);
+  }));
+  form.addEventListener('submit', event => { event.preventDefault(); applyFilters(); });
+})();
+</script>
+{% endblock %}

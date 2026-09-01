@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Eliminar | {{ config.title }}{% endblock %}
+{% block page_title %}Eliminar registro{% endblock %}
+{% block page_description %}Confirma esta acción antes de continuar{% endblock %}
+{% block content %}
+<div class="delete-page">
+  <article class="delete-dialog" role="alertdialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <a class="delete-close" href="{% url 'record_list' module %}" aria-label="Cerrar"><i class="bi bi-x-lg"></i></a>
+    <div class="delete-dialog-header">
+      <div class="delete-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+      <div>
+        <span class="delete-eyebrow">Acción irreversible</span>
+        <h2 id="delete-title">¿Eliminar este registro?</h2>
+      </div>
+    </div>
+    <div class="delete-dialog-body">
+      <p id="delete-description">Estás a punto de eliminar permanentemente el siguiente registro de <strong>{{ config.title|lower }}</strong>:</p>
+      <div class="delete-record"><i class="bi bi-file-earmark-x"></i><span>{{ record }}</span></div>
+      <div class="delete-warning"><i class="bi bi-info-circle"></i><span>Esta acción no se puede deshacer. Si existen registros relacionados, el sistema podría impedir la eliminación para proteger la información.</span></div>
+    </div>
+    <form method="post" class="delete-actions">
+      {% csrf_token %}
+      <a class="btn btn-outline-secondary" href="{% url 'record_list' module %}"><i class="bi bi-arrow-left"></i> Cancelar</a>
+      <button class="btn btn-danger" type="submit"><i class="bi bi-trash3"></i> Eliminar definitivamente</button>
+    </form>
+  </article>
+</div>
+<script>
+(() => {
+  const overlay = document.querySelector('.delete-page');
+  const cancelUrl = "{% url 'record_list' module %}";
+  overlay?.addEventListener('click', event => { if (event.target === overlay) window.location.assign(cancelUrl); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') window.location.assign(cancelUrl); }, { once: true });
+  document.querySelector('.delete-actions button')?.focus();
+})();
+</script>
+{% endblock %}

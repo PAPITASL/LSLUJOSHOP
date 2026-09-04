@@ -869,6 +869,10 @@ def record_list(request, module):
         for order in records:
             order_date = timezone.localtime(order.fecha) if timezone.is_aware(order.fecha) else order.fecha
             order.can_manage_order = order_date.strftime("%Y-%m") == current_period
+            order.can_cancel_order = (
+                order.estado.lower() != "cancelada"
+                or DetalleOrden.objects.filter(orden=order, cantidad_entregada__gt=0).exists()
+            )
 
     return render(request, "gestion/list.html", {
         "module": module, "config": config, "records": records, "query": query,
@@ -910,7 +914,16 @@ def _order_form(request, config, instance):
         request.POST or None, instance=instance, prefix="productos", form_kwargs=form_kwargs,
     )
 
-    if request.method == "POST" and form.is_valid() and formset.is_valid():
+    forms_are_valid = request.method == "POST" and form.is_valid() and formset.is_valid()
+    cancellation_requires_action = bool(
+        forms_are_valid
+        and form.cleaned_data.get("estado") == "Cancelada"
+        and (creating or instance.estado.lower() != "cancelada")
+    )
+    if cancellation_requires_action:
+        form.add_error("estado", "Usa la opción «Cancelar y devolver al inventario» en el listado de órdenes.")
+
+    if forms_are_valid and not cancellation_requires_action:
         try:
             with transaction.atomic():
                 if creating:
@@ -1159,6 +1172,9 @@ def order_receipt(request, pk):
 @login_required
 def order_delivery(request, pk):
     order = get_object_or_404(Ordenes.objects.select_related("cliente"), pk=pk)
+    if order.estado.lower() == "cancelada":
+        messages.warning(request, "No puedes registrar entregas ni pagos desde una orden cancelada.")
+        return redirect("record_list", module="ordenes")
     details = list(DetalleOrden.objects.filter(orden=order).select_related("producto").order_by("pk"))
 
     if request.method == "POST":
@@ -1185,6 +1201,8 @@ def order_delivery(request, pk):
 
             with transaction.atomic():
                 locked_order = Ordenes.objects.select_for_update().get(pk=order.pk)
+                if locked_order.estado.lower() == "cancelada":
+                    raise ValidationError("No puedes registrar entregas ni pagos desde una orden cancelada.")
                 locked_details = list(
                     DetalleOrden.objects.select_for_update()
                     .filter(orden=locked_order).order_by("pk")
@@ -1246,6 +1264,57 @@ def order_delivery(request, pk):
         details = list(DetalleOrden.objects.filter(orden=order).select_related("producto").order_by("pk"))
 
     return render(request, "gestion/order_delivery.html", {"order": order, "details": details})
+
+
+@login_required
+def order_cancel(request, pk):
+    """Cancela una orden y reintegra únicamente las unidades que ya salieron."""
+    order = get_object_or_404(Ordenes.objects.select_related("cliente"), pk=pk)
+    details = list(DetalleOrden.objects.filter(orden=order).select_related("producto").order_by("pk"))
+
+    if request.method == "POST":
+        try:
+            with transaction.atomic():
+                locked_order = Ordenes.objects.select_for_update().get(pk=order.pk)
+                locked_details = list(
+                    DetalleOrden.objects.select_for_update()
+                    .filter(orden=locked_order).order_by("pk")
+                )
+                has_units_to_return = any(detail.cantidad_entregada for detail in locked_details)
+                if locked_order.estado.lower() == "cancelada" and not has_units_to_return:
+                    messages.warning(request, "La orden ya estaba cancelada; no se modificó el inventario.")
+                    return redirect("record_list", module="ordenes")
+                product_ids = {detail.producto_id for detail in locked_details if detail.producto_id}
+                products = {
+                    product.pk: product
+                    for product in Productos.objects.select_for_update().filter(pk__in=product_ids)
+                }
+                returned_units = 0
+                for detail in locked_details:
+                    if detail.producto_id:
+                        product = products[detail.producto_id]
+                        if detail.cantidad_entregada:
+                            product.cantidad_disponible += detail.cantidad_entregada
+                            returned_units += detail.cantidad_entregada
+                        # Al cancelar, las unidades reservadas vuelven a estar disponibles.
+                        product.estado = "Disponible" if product.cantidad_disponible > 0 else "Agotado"
+                        product.save(update_fields=["cantidad_disponible", "estado", "actualizado_en"])
+                    if detail.cantidad_entregada:
+                        detail.cantidad_entregada = 0
+                        detail.save(update_fields=["cantidad_entregada"])
+
+                locked_order.estado = "Cancelada"
+                locked_order.save(update_fields=["estado", "actualizado_en"])
+
+            if returned_units:
+                messages.success(request, f"Orden cancelada. Se devolvieron {returned_units} unidades al inventario.")
+            else:
+                messages.success(request, "Orden cancelada. Sus productos pendientes quedaron disponibles en inventario.")
+            return redirect("record_list", module="ordenes")
+        except DatabaseError:
+            messages.error(request, "No se pudo cancelar la orden. Inténtalo nuevamente.")
+
+    return render(request, "gestion/order_cancel.html", {"order": order, "details": details})
 
 
 @login_required

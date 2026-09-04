@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Cancelar orden {{ order.numero_orden }} | LujoShop{% endblock %}
+{% block page_title %}Cancelar orden {{ order.numero_orden }}{% endblock %}
+{% block page_description %}Devolver productos al inventario{% endblock %}
+{% block content %}
+<div class="content-card">
+  <div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    La orden quedará marcada como <strong>Cancelada</strong>. Las unidades ya entregadas regresarán al inventario y las pendientes quedarán disponibles.
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Producto</th><th>Unidades de la orden</th><th>Ya entregadas</th><th>Acción en inventario</th></tr></thead>
+      <tbody>
+        {% for detail in details %}
+        <tr>
+          <td><strong>{{ detail.descripcion_producto }}</strong></td>
+          <td>{{ detail.cantidad }}</td>
+          <td>{{ detail.cantidad_entregada }}</td>
+          <td>{% if detail.producto %}{% if detail.cantidad_entregada %}Se devolverán {{ detail.cantidad_entregada }}{% else %}Quedará disponible{% endif %}{% else %}<span class="text-muted">Sin producto comprado para inventariar</span>{% endif %}</td>
+        </tr>
+        {% empty %}<tr><td colspan="4" class="text-center text-muted">La orden no tiene productos.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-muted"><i class="bi bi-info-circle"></i> Los abonos registrados no se eliminan; permanecerán en el historial para gestionar su devolución por separado.</p>
+  <form method="post" class="form-actions">
+    {% csrf_token %}
+    <a class="btn btn-light" href="{% url 'record_list' 'ordenes' %}">Volver</a>
+    <button class="btn btn-warning" type="submit"><i class="bi bi-arrow-counterclockwise"></i> Cancelar y devolver al inventario</button>
+  </form>
+</div>
+{% endblock %}

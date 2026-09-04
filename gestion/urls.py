@@ -8,6 +8,7 @@ urlpatterns = [
     path("reportes/", views.reports_dashboard, name="reports_dashboard"),
     path("ordenes/<int:pk>/recibo/", views.order_receipt, name="order_receipt"),
     path("ordenes/<int:pk>/entrega/", views.order_delivery, name="order_delivery"),
+    path("ordenes/<int:pk>/cancelar/", views.order_cancel, name="order_cancel"),
     path("reportes/<str:module>/pdf/", views.module_report, name="module_report"),
     path("importar/<str:module>/", views.excel_import, name="excel_import"),
     path("importar/<str:module>/plantilla/", views.excel_template, name="excel_template"),

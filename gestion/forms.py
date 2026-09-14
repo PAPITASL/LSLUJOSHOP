@@ -79,8 +79,10 @@ class OrdenForm(BaseGestionForm):
             month_end = (next_month - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M")
             self.fields["fecha"].widget.attrs.update({"min": month_start, "max": month_end})
         if historical_cost_only:
-            for field in self.fields.values():
-                field.disabled = True
+            for field_name, field in self.fields.items():
+                # Las observaciones no alteran los valores contables y deben
+                # poder corregirse incluso cuando el mes ya esta cerrado.
+                field.disabled = field_name != "observaciones"
 
     def clean_fecha(self):
         value = self.cleaned_data["fecha"]
@@ -112,7 +114,7 @@ class DetalleOrdenForm(BaseGestionForm):
             "producto", "descripcion_producto", "categoria_producto", "origen_producto", "marca_producto",
             "modelo_producto", "anio_inicio_producto", "anio_fin_producto", "cantidad", "costo_unitario_dolares",
             "costo_unitario_pesos", "flete_unitario_dolares",
-            "flete_unitario_pesos", "precio_venta_unitario",
+            "flete_unitario_pesos", "precio_venta_unitario", "referencia_bog",
         )
         labels = {
             "costo_unitario_dolares": "Costo (USD)",
@@ -122,6 +124,7 @@ class DetalleOrdenForm(BaseGestionForm):
             "precio_venta_unitario": "Precio de venta (COP)",
         }
         widgets = {
+            "referencia_bog": forms.TextInput(attrs={"placeholder": "Ej. BOG-12345"}),
             "descripcion_producto": forms.HiddenInput(), "categoria_producto": forms.HiddenInput(), "origen_producto": forms.HiddenInput(),
             "marca_producto": forms.HiddenInput(), "modelo_producto": forms.HiddenInput(),
             "anio_inicio_producto": forms.HiddenInput(), "anio_fin_producto": forms.HiddenInput(),
@@ -149,6 +152,7 @@ class DetalleOrdenForm(BaseGestionForm):
             self.fields["flete_unitario_pesos"].initial = 0
         if historical_cost_only:
             editable_costs = {
+                "referencia_bog",
                 "costo_unitario_dolares", "costo_unitario_pesos",
                 "flete_unitario_dolares", "flete_unitario_pesos",
             }

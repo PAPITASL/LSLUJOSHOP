@@ -85,14 +85,16 @@ class ExternalOrderProductTests(SimpleTestCase):
 
 
 class HistoricalOrderCostFormTests(SimpleTestCase):
-    def test_order_fields_are_locked(self):
+    def test_only_order_observations_are_editable(self):
         form = OrdenForm(historical_cost_only=True)
-        self.assertTrue(all(field.disabled for field in form.fields.values()))
+        editable = {name for name, field in form.fields.items() if not field.disabled}
+        self.assertEqual(editable, {"observaciones"})
 
     def test_only_product_cost_fields_are_editable(self):
         form = DetalleOrdenForm(historical_cost_only=True)
         editable = {name for name, field in form.fields.items() if not field.disabled}
         self.assertEqual(editable, {
+            "referencia_bog",
             "costo_unitario_dolares", "costo_unitario_pesos",
             "flete_unitario_dolares", "flete_unitario_pesos",
         })

@@ -43,6 +43,6 @@
     <div class="col-12 col-md-4"><label class="form-label" for="referencia">Referencia</label><input id="referencia" class="form-control" name="referencia" maxlength="150" placeholder="Opcional"></div>
   </div>
   <p class="delivery-note"><i class="bi bi-info-circle"></i> Al confirmar, únicamente los productos marcados como “Entregado” se descuentan del inventario. Los demás seguirán pendientes.</p>
-  <div class="form-actions"><a class="btn btn-light" href="{% url 'record_list' 'ordenes' %}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Confirmar entrega</button></div>
+  <div class="form-actions"><a class="btn btn-light" href="{{ return_url }}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Confirmar entrega</button></div>
 </form>
 {% endblock %}

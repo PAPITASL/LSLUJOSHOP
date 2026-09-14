@@ -24,6 +24,15 @@ from .report_pdf import build_module_report
 from .excel_import import IMPORT_CONFIG, build_template, import_excel
 
 
+@login_required
+def order_preview(request, pk):
+    order = get_object_or_404(Ordenes.objects.select_related("cliente", "vendedor"), pk=pk)
+    return render(request, "gestion/order_preview.html", {
+        "order": order,
+        "details": DetalleOrden.objects.filter(orden=order).order_by("pk"),
+    })
+
+
 MODULES = {
     "productos": {"model": Productos, "title": "Productos", "icon": "box-seam", "search": ("nombre", "categoria", "marca", "modelo", "estado"), "columns": (("nombre", "Producto"), ("categoria", "Categoría"), ("marca", "Marca"), ("modelo", "Modelo"), ("cantidad_disponible", "Existencias"), ("precio_venta_sugerido", "Precio"), ("estado", "Estado"))},
     "clientes": {"model": Clientes, "title": "Clientes", "icon": "people", "search": ("nombre", "telefono", "ciudad"), "columns": (("nombre", "Nombre"), ("telefono", "Teléfono"), ("ciudad", "Ciudad"), ("direccion", "Dirección"))},
@@ -1170,6 +1179,50 @@ def order_receipt(request, pk):
 
 
 @login_required
+def pending_deliveries(request):
+    """Reune productos vendidos que todavia no han sido entregados."""
+    search = request.GET.get("q", "").strip()
+    details = (
+        DetalleOrden.objects.select_related("orden", "orden__cliente", "producto")
+        .filter(cantidad_entregada__lt=F("cantidad"))
+        .exclude(orden__estado__iexact="cancelada")
+        .order_by("orden__fecha", "orden_id", "pk")
+    )
+    if search:
+        details = details.filter(
+            Q(orden__numero_orden__icontains=search)
+            | Q(orden__cliente__nombre__icontains=search)
+            | Q(orden__cliente__telefono__icontains=search)
+            | Q(descripcion_producto__icontains=search)
+        )
+
+    orders = {}
+    total_units = ready_units = 0
+    for detail in details:
+        detail.pending_quantity = detail.cantidad - detail.cantidad_entregada
+        stock = detail.producto.cantidad_disponible if detail.producto else 0
+        detail.ready_quantity = min(detail.pending_quantity, max(stock, 0))
+        detail.is_ready = detail.ready_quantity > 0
+        total_units += detail.pending_quantity
+        ready_units += detail.ready_quantity
+        group = orders.setdefault(detail.orden_id, {"order": detail.orden, "details": [], "ready": False})
+        group["details"].append(detail)
+        group["ready"] = group["ready"] or detail.is_ready
+
+    order_groups = sorted(
+        orders.values(),
+        key=lambda group: (not group["ready"], group["order"].fecha),
+    )
+    return render(request, "gestion/pending_deliveries.html", {
+        "order_groups": order_groups,
+        "orders_count": len(order_groups),
+        "total_units": total_units,
+        "ready_units": ready_units,
+        "search": search,
+    })
+
+
+@login_required
 def order_delivery(request, pk):
     order = get_object_or_404(Ordenes.objects.select_related("cliente"), pk=pk)
     if order.estado.lower() == "cancelada":
@@ -1257,13 +1310,19 @@ def order_delivery(request, pk):
                     _sync_payment_movement(created_payment, locked_order)
 
             messages.success(request, "Entrega y pago registrados correctamente.")
+            if request.GET.get("next") == reverse("pending_deliveries"):
+                return redirect("pending_deliveries")
             return redirect("record_list", module="ordenes")
         except (ValidationError, ValueError) as error:
             messages.error(request, error.message if isinstance(error, ValidationError) else str(error))
         order.refresh_from_db()
         details = list(DetalleOrden.objects.filter(orden=order).select_related("producto").order_by("pk"))
 
-    return render(request, "gestion/order_delivery.html", {"order": order, "details": details})
+    return render(request, "gestion/order_delivery.html", {
+        "order": order,
+        "details": details,
+        "return_url": reverse("pending_deliveries") if request.GET.get("next") == reverse("pending_deliveries") else reverse("record_list", args=["ordenes"]),
+    })
 
 
 @login_required

@@ -2,10 +2,12 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path("ordenes/<int:pk>/vista-previa/", views.order_preview, name="order_preview"),
     path("", views.dashboard, name="dashboard"),
     path("api/trm/", views.trm_actual, name="trm_actual"),
     path("api/productos/nuevo/", views.quick_product_create, name="quick_product_create"),
     path("reportes/", views.reports_dashboard, name="reports_dashboard"),
+    path("entregas-pendientes/", views.pending_deliveries, name="pending_deliveries"),
     path("ordenes/<int:pk>/recibo/", views.order_receipt, name="order_receipt"),
     path("ordenes/<int:pk>/entrega/", views.order_delivery, name="order_delivery"),
     path("ordenes/<int:pk>/cancelar/", views.order_cancel, name="order_cancel"),

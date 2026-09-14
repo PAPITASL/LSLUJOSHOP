@@ -39,7 +39,7 @@
   </div>
   </form>
   <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr>{% for field, label in config.columns %}<th>{{ label }}</th>{% endfor %}<th class="text-end">Acciones</th></tr></thead><tbody>
-  {% for record in records %}<tr>{% for field, label in config.columns %}<td>{{ record|get_attr:field }}</td>{% endfor %}<td class="text-end text-nowrap">{% if module == 'ordenes' %}{% if record.can_cancel_order %}<a class="btn btn-sm btn-success" href="{% url 'order_delivery' record.pk %}" title="Registrar entrega o pago"><i class="bi bi-check2"></i></a> {% endif %}<a class="btn btn-sm btn-outline-dark" href="{% url 'order_receipt' record.pk %}" title="Descargar recibo PDF"><i class="bi bi-file-earmark-arrow-down"></i></a> <a class="btn btn-sm btn-outline-primary" href="{% url 'record_update' module record.pk %}" title="{% if record.can_manage_order %}Editar orden{% else %}Editar costos de productos{% endif %}"><i class="bi bi-pencil"></i></a> {% if record.can_cancel_order %}<a class="btn btn-sm btn-outline-warning" href="{% url 'order_cancel' record.pk %}" title="Cancelar y devolver al inventario"><i class="bi bi-arrow-counterclockwise"></i></a> {% endif %}{% if record.can_manage_order %}<a class="btn btn-sm btn-outline-danger" href="{% url 'record_delete' module record.pk %}" title="Eliminar"><i class="bi bi-trash"></i></a>{% endif %}{% else %}<a class="btn btn-sm btn-outline-primary" href="{% url 'record_update' module record.pk %}" title="Editar"><i class="bi bi-pencil"></i></a>{% if module != 'clientes' %} <a class="btn btn-sm btn-outline-danger" href="{% url 'record_delete' module record.pk %}" title="Eliminar"><i class="bi bi-trash"></i></a>{% endif %}{% endif %}</td></tr>{% empty %}<tr><td colspan="10" class="empty-state"><i class="bi bi-inbox"></i><p>No se encontraron registros.</p>{% if module != 'ordenes' or periodo == current_period %}<a href="{% url 'record_create' module %}">Crear el primero</a>{% endif %}</td></tr>{% endfor %}
+  {% for record in records %}<tr>{% for field, label in config.columns %}<td>{{ record|get_attr:field }}</td>{% endfor %}<td class="text-end text-nowrap">{% if module == 'ordenes' %}<button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#orderPreviewModal" data-preview-url="{% url 'order_preview' record.pk %}" aria-label="Ver factura {{ record.numero_orden }}" title="Vista previa"><i class="bi bi-eye"></i></button> {% if record.can_cancel_order %}<a class="btn btn-sm btn-success" href="{% url 'order_delivery' record.pk %}" title="Registrar entrega o pago"><i class="bi bi-check2"></i></a> {% endif %}<a class="btn btn-sm btn-outline-dark" href="{% url 'order_receipt' record.pk %}" title="Descargar recibo PDF"><i class="bi bi-file-earmark-arrow-down"></i></a> <a class="btn btn-sm btn-outline-primary" href="{% url 'record_update' module record.pk %}" title="{% if record.can_manage_order %}Editar orden{% else %}Editar costos de productos{% endif %}"><i class="bi bi-pencil"></i></a> {% if record.can_cancel_order %}<a class="btn btn-sm btn-outline-warning" href="{% url 'order_cancel' record.pk %}" title="Cancelar y devolver al inventario"><i class="bi bi-arrow-counterclockwise"></i></a> {% endif %}{% if record.can_manage_order %}<a class="btn btn-sm btn-outline-danger" href="{% url 'record_delete' module record.pk %}" title="Eliminar"><i class="bi bi-trash"></i></a>{% endif %}{% else %}<a class="btn btn-sm btn-outline-primary" href="{% url 'record_update' module record.pk %}" title="Editar"><i class="bi bi-pencil"></i></a>{% if module != 'clientes' %} <a class="btn btn-sm btn-outline-danger" href="{% url 'record_delete' module record.pk %}" title="Eliminar"><i class="bi bi-trash"></i></a>{% endif %}{% endif %}</td></tr>{% empty %}<tr><td colspan="10" class="empty-state"><i class="bi bi-inbox"></i><p>No se encontraron registros.</p>{% if module != 'ordenes' or periodo == current_period %}<a href="{% url 'record_create' module %}">Crear el primero</a>{% endif %}</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
 <script>
@@ -62,4 +62,36 @@
   form.addEventListener('submit', event => { event.preventDefault(); applyFilters(); });
 })();
 </script>
+
+{% if module == 'ordenes' %}
+<div class="modal fade" id="orderPreviewModal" tabindex="-1" aria-labelledby="orderPreviewTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><h2 class="modal-title fs-5" id="orderPreviewTitle">Vista previa de factura</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+    <div class="modal-body" id="order-preview-body" aria-live="polite"></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Cerrar</button></div>
+  </div></div>
+</div>
+<script>
+(() => {
+  const modal = document.getElementById('orderPreviewModal');
+  const body = document.getElementById('order-preview-body');
+  let controller;
+  modal.addEventListener('show.bs.modal', async event => {
+    controller?.abort();
+    const current = new AbortController();
+    controller = current;
+    body.textContent = 'Cargando factura?';
+    try {
+      const response = await fetch(event.relatedTarget.dataset.previewUrl, {signal: current.signal});
+      if (!response.ok || response.redirected) throw new Error('No disponible');
+      const html = await response.text();
+      if (!current.signal.aborted) body.innerHTML = html;
+    } catch (error) {
+      if (error.name !== 'AbortError') body.textContent = 'No se pudo cargar la factura. Cierra esta ventana e intenta nuevamente.';
+    }
+  });
+  modal.addEventListener('hide.bs.modal', () => { controller?.abort(); });
+})();
+</script>
+{% endif %}
 {% endblock %}

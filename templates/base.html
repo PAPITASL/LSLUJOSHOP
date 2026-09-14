@@ -22,7 +22,7 @@
 
     <link
         rel="stylesheet"
-        href="{% static 'css/styles.css' %}?v=adaptive-charts-20260828-1"
+        href="{% static 'css/styles.css' %}?v=order-bog-20260914-2"
     >
 </head>
 
@@ -58,6 +58,11 @@
                     <i class="bi bi-receipt"></i>
                     Órdenes
                 </button>
+
+                <a href="{% url 'pending_deliveries' %}">
+                    <i class="bi bi-bell"></i>
+                    Por entregar
+                </a>
 
                 <a href="{% url 'reports_dashboard' %}">
                     <i class="bi bi-bar-chart-line"></i>

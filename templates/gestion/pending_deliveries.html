@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Pendientes por entregar | LujoShop{% endblock %}
+{% block page_title %}Pendientes por entregar{% endblock %}
+{% block page_description %}Productos que los clientes todavía no han recibido{% endblock %}
+{% block content %}
+<section class="pending-delivery-summary">
+  <div><i class="bi bi-receipt"></i><span>Facturas pendientes</span><strong>{{ orders_count }}</strong></div>
+  <div><i class="bi bi-box-seam"></i><span>Unidades por entregar</span><strong>{{ total_units }}</strong></div>
+  <div class="ready"><i class="bi bi-check-circle"></i><span>Unidades disponibles ahora</span><strong>{{ ready_units }}</strong></div>
+</section>
+
+<form method="get" class="content-card pending-delivery-search">
+  <div><i class="bi bi-search"></i><input class="form-control" name="q" value="{{ search }}" placeholder="Buscar cliente, teléfono, factura o producto"></div>
+  <button class="btn btn-dark" type="submit">Buscar</button>
+  {% if search %}<a class="btn btn-light" href="{% url 'pending_deliveries' %}">Limpiar</a>{% endif %}
+</form>
+
+<div class="pending-delivery-list">
+  {% for group in order_groups %}
+  <form method="post" action="{% url 'order_delivery' group.order.pk %}?next={% url 'pending_deliveries' %}" class="content-card pending-order-card{% if group.ready %} is-ready{% endif %}">{% csrf_token %}
+    <header>
+      <div><small>CLIENTE</small><h2>{{ group.order.cliente.nombre }}</h2><span><i class="bi bi-telephone"></i> {{ group.order.cliente.telefono|default:"Sin teléfono registrado" }}</span></div>
+      <div class="pending-order-meta"><span>Factura <strong>{{ group.order.numero_orden }}</strong></span><span>{{ group.order.fecha|date:"d/m/Y" }}</span></div>
+    </header>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead><tr><th>Producto</th><th>Pedido</th><th>Entregado</th><th>Falta</th><th>Estado de esta entrega</th></tr></thead>
+        <tbody>{% for detail in group.details %}<tr>
+          <td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.marca_producto or detail.modelo_producto %}<small>{{ detail.marca_producto|default:"" }} {{ detail.modelo_producto|default:"" }}</small>{% endif %}</td>
+          <td>{{ detail.cantidad }}</td><td>{{ detail.cantidad_entregada }}</td><td><strong>{{ detail.pending_quantity }}</strong></td>
+          <td>{% if detail.is_ready %}<select class="form-select form-select-sm pending-delivery-select" name="entregar_{{ detail.pk }}"><option value="0" selected>No entregado</option><option value="{{ detail.ready_quantity }}">Entregar ahora ({{ detail.ready_quantity }})</option></select>{% else %}<span class="delivery-waiting"><i class="bi bi-clock"></i> Aún no disponible</span>{% endif %}</td>
+        </tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    <footer>
+      <span>{% if group.ready %}<i class="bi bi-bell-fill"></i> Hay productos listos para este cliente{% else %}<i class="bi bi-hourglass-split"></i> Esperando llegada de productos{% endif %}</span>
+      {% if group.ready %}<button class="btn btn-success" type="submit"><i class="bi bi-check2-square"></i> Confirmar cambio</button>{% else %}<a class="btn btn-outline-secondary" href="{% url 'record_update' 'ordenes' group.order.pk %}"><i class="bi bi-pencil"></i> Revisar factura</a>{% endif %}
+    </footer>
+  </form>
+  {% empty %}
+  <div class="content-card pending-delivery-empty"><i class="bi bi-check2-circle"></i><h2>No hay entregas pendientes</h2><p>{% if search %}No se encontraron resultados para “{{ search }}”.{% else %}Todos los productos vendidos ya fueron entregados.{% endif %}</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

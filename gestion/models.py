@@ -110,6 +110,7 @@ class DetalleOrden(models.Model):
     descripcion_producto = models.CharField(max_length=250)
     categoria_producto = models.CharField(max_length=100, blank=True, null=True)
     origen_producto = models.CharField(max_length=12, default="INVENTARIO")
+    referencia_bog = models.CharField("BOG", max_length=150, blank=True, default="")
     marca_producto = models.CharField(max_length=100, blank=True, null=True)
     modelo_producto = models.CharField(max_length=100, blank=True, null=True)
     anio_inicio_producto = models.SmallIntegerField(blank=True, null=True)

@@ -1,0 +1,30 @@
+{% load gestion_extras %}
+<div class="d-flex justify-content-between gap-3 flex-wrap mb-4">
+  <div><small class="text-muted">ORDEN / FACTURA</small><h3 class="mb-1">N.º {{ order.numero_orden }}</h3><div class="text-muted">{{ order.fecha|date:"d/m/Y H:i" }}</div></div>
+  <div class="text-end"><span class="badge bg-light text-dark border">{{ order.estado }}</span>{% if order.vendedor %}<div class="text-muted mt-2">Vendedor: {{ order.vendedor }}</div>{% endif %}</div>
+</div>
+<section class="border rounded-3 bg-light p-3 mb-4" aria-label="Datos del cliente">
+  <div class="small text-muted fw-bold mb-2">DATOS DEL CLIENTE</div>
+  <div class="row g-3">
+    <div class="col-12 col-md-6"><div class="small text-muted">Nombre</div><strong class="text-break">{{ order.cliente.nombre }}</strong></div>
+    <div class="col-12 col-md-6"><div class="small text-muted">Tel?fono</div><span>{{ order.cliente.telefono|default:"Sin registrar" }}</span></div>
+    <div class="col-12 col-md-6"><div class="small text-muted">Ciudad</div><span class="text-break">{{ order.cliente.ciudad|default:"Sin registrar" }}</span></div>
+    <div class="col-12 col-md-6"><div class="small text-muted">Direcci?n</div><span class="text-break">{{ order.cliente.direccion|default:"Sin registrar" }}</span></div>
+    {% if order.cliente.observaciones %}<div class="col-12"><div class="small text-muted">Observaciones del cliente</div><div class="text-break">{{ order.cliente.observaciones|linebreaksbr }}</div></div>{% endif %}
+  </div>
+</section>
+<div class="table-responsive"><table class="table align-middle">
+  <thead><tr><th>Producto</th><th>BOG</th><th class="text-center">Cantidad</th><th class="text-center">Entregada</th><th class="text-end">Precio</th><th class="text-end">Total</th></tr></thead>
+  <tbody>{% for detail in details %}<tr><td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.marca_producto or detail.modelo_producto %}<div class="small text-muted">{{ detail.marca_producto|default:"" }} {{ detail.modelo_producto|default:"" }}</div>{% endif %}</td><td>{{ detail.referencia_bog|default:"—" }}</td><td class="text-center">{{ detail.cantidad }}</td><td class="text-center">{{ detail.cantidad_entregada }}</td><td class="text-end text-nowrap">{{ detail.precio_venta_unitario|money_cop }}</td><td class="text-end text-nowrap">{{ detail.total_venta|money_cop }}</td></tr>{% empty %}<tr><td colspan="6">Esta orden no tiene productos.</td></tr>{% endfor %}</tbody>
+</table></div>
+<div class="row g-3 mt-2">
+  <div class="col-12 col-md-6">{% if order.observaciones %}<strong>Observaciones</strong><div class="text-muted">{{ order.observaciones|linebreaksbr }}</div>{% endif %}</div>
+  <div class="col-12 col-md-6"><dl class="row mb-0">
+    <dt class="col-6">Subtotal</dt><dd class="col-6 text-end">{{ order.subtotal_venta|money_cop }}</dd>
+    <dt class="col-6">Descuento</dt><dd class="col-6 text-end">{{ order.descuento|money_cop }}</dd>
+    <dt class="col-6">Total</dt><dd class="col-6 text-end fw-bold">{{ order.total_venta|money_cop }}</dd>
+    <dt class="col-6">Abonado</dt><dd class="col-6 text-end">{{ order.total_abonado|money_cop }}</dd>
+    <dt class="col-6">Saldo pendiente</dt><dd class="col-6 text-end fw-bold">{{ order.saldo_pendiente|money_cop }}</dd>
+  </dl></div>
+</div>
+<div class="d-flex justify-content-end mt-3"><a class="btn btn-outline-dark btn-sm" href="{% url 'order_receipt' order.pk %}"><i class="bi bi-download"></i> Descargar PDF</a></div>

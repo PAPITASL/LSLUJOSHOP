@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}BOG | LujoShop{% endblock %}
+{% block page_title %}Directorio de BOG{% endblock %}
+{% block page_description %}Consulta las referencias con flete pendiente y su orden{% endblock %}
+{% block content %}
+<section class="bog-summary">
+  <div><i class="bi bi-upc-scan"></i><span>Referencias con flete pendiente</span><strong>{{ total_bogs }}</strong></div>
+  <p>Este directorio reúne los BOG de todos los meses y muestra una fila por producto. Los productos que ya tienen un flete registrado en USD o COP no aparecen.</p>
+</section>
+
+<section class="content-card bog-directory">
+  <form method="get" class="bog-search" role="search">
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input class="form-control" type="search" name="q" value="{{ query }}" placeholder="Buscar por BOG, orden, cliente o producto" aria-label="Buscar BOG" autofocus>
+      <button class="btn btn-gold" type="submit">Buscar</button>
+    </div>
+    {% if query %}<a class="btn btn-outline-secondary" href="{% url 'bog_list' %}" title="Limpiar búsqueda"><i class="bi bi-x-lg"></i> Limpiar</a>{% endif %}
+  </form>
+
+  <div class="bog-results-meta">
+    {% if query %}<span>{{ results_count }} resultado{{ results_count|pluralize }} para “{{ query }}”</span>{% else %}<span>Mostrando {{ results_count }} referencia{{ results_count|pluralize }}</span>{% endif %}
+    {% if results_count == 300 %}<small>Se muestran las 300 más recientes. Usa el buscador para precisar.</small>{% endif %}
+  </div>
+
+  <div class="table-responsive">
+    <table class="table align-middle bog-table">
+      <thead><tr><th>BOG</th><th>Orden</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cantidad</th><th class="text-end">Acción</th></tr></thead>
+      <tbody>
+      {% for detail in details %}
+        <tr>
+          <td><span class="bog-code">{{ detail.referencia_bog }}</span></td>
+          <td><strong>{{ detail.orden.numero_orden }}</strong></td>
+          <td class="text-nowrap">{{ detail.orden.fecha|date:"d/m/Y" }}</td>
+          <td>{{ detail.orden.cliente.nombre }}</td>
+          <td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.marca_producto or detail.modelo_producto %}<small>{{ detail.marca_producto|default:"" }} {{ detail.modelo_producto|default:"" }}</small>{% endif %}</td>
+          <td>{{ detail.cantidad }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="{% url 'record_update' 'ordenes' detail.orden_id %}" title="Abrir orden {{ detail.orden.numero_orden }}"><i class="bi bi-box-arrow-up-right"></i> Ver orden</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty-state"><i class="bi bi-search"></i><p>{% if query %}No encontramos BOG con flete pendiente que coincidan con la búsqueda.{% else %}No hay referencias BOG con flete pendiente.{% endif %}</p></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

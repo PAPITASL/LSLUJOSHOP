@@ -66,6 +66,8 @@ class OrdenForm(BaseGestionForm):
     def __init__(self, *args, **kwargs):
         historical_cost_only = kwargs.pop("historical_cost_only", False)
         super().__init__(*args, **kwargs)
+        self.original_state = self.instance.estado if self.instance.pk else None
+        self.fields["estado"].help_text = "Las salidas se registran desde Registrar entrega; cancelar una orden requiere Cancelar y devolver al inventario."
         self.fields["tasa_dolar"].required = False
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localtime().strftime("%Y-%m-%dT%H:%M")
@@ -83,6 +85,15 @@ class OrdenForm(BaseGestionForm):
                 # Las observaciones no alteran los valores contables y deben
                 # poder corregirse incluso cuando el mes ya esta cerrado.
                 field.disabled = field_name != "observaciones"
+
+    def clean_estado(self):
+        state = self.cleaned_data["estado"]
+        if state != self.original_state:
+            if state in {"Entregada", "Entrega parcial"}:
+                raise forms.ValidationError("Usa Registrar entrega para descontar las cantidades del inventario.")
+            if state == "Cancelada":
+                raise forms.ValidationError("Usa Cancelar y devolver al inventario en el listado de órdenes.")
+        return state
 
     def clean_fecha(self):
         value = self.cleaned_data["fecha"]

@@ -8,6 +8,7 @@ urlpatterns = [
     path("api/productos/nuevo/", views.quick_product_create, name="quick_product_create"),
     path("reportes/", views.reports_dashboard, name="reports_dashboard"),
     path("entregas-pendientes/", views.pending_deliveries, name="pending_deliveries"),
+    path("bog/", views.bog_list, name="bog_list"),
     path("ordenes/<int:pk>/recibo/", views.order_receipt, name="order_receipt"),
     path("ordenes/<int:pk>/entrega/", views.order_delivery, name="order_delivery"),
     path("ordenes/<int:pk>/cancelar/", views.order_cancel, name="order_cancel"),

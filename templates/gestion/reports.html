@@ -6,11 +6,14 @@
 {% localize off %}
 <div class="reports-dashboard">
   <section class="reports-hero">
-    <div><span>REPORTE EJECUTIVO</span><h2>{{ period_label }}</h2><p>Ventas, rentabilidad, inventario, clientes y equipo comercial en una sola vista.</p></div>
-    <button class="btn reports-period-button" type="button" data-bs-toggle="modal" data-bs-target="#reportsPeriodModal"><i class="bi bi-calendar-range"></i> Seleccionar período</button>
+    <div><span>{{ report_title }}</span><h2>{{ period_label }}</h2><p>{% if is_monthly %}Período: {{ period_range }} · Comparado con: {{ comparison_label }} · Generado: {{ generated_at|date:"d/m/Y H:i" }} (Bogotá){% else %}Ventas, rentabilidad, inventario, clientes y equipo comercial en una sola vista.{% endif %}</p></div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-danger" href="{% url 'reports_dashboard' %}?formato=pdf&amp;meses={{ selected_periods|join:','|urlencode }}"><i class="bi bi-file-earmark-pdf"></i> Descargar reporte completo</a>
+      <button class="btn reports-period-button" type="button" data-bs-toggle="modal" data-bs-target="#reportsPeriodModal"><i class="bi bi-calendar-range"></i> Seleccionar período</button>
+    </div>
   </section>
 
-  {% if is_general %}<div class="report-scope-note"><i class="bi bi-info-circle"></i><span>Los resultados comerciales incluyen todo el historial. El inventario corresponde a las existencias disponibles actualmente.</span></div>{% endif %}
+  <div class="report-scope-note"><i class="bi bi-info-circle"></i><span>{{ inventory_note }} {{ temporal_note }}</span></div>
 
   <section class="executive-kpis report-kpis">
     <article class="executive-kpi kpi-red"><i class="bi bi-currency-dollar"></i><div><span>Ventas totales</span><strong>{{ total_sales|money_cop }}</strong><small>{% if has_comparison and sales_variation.value != None %}<b class="variation-{{ sales_variation.direction }}"><i class="bi bi-{{ sales_variation.icon }}"></i> {{ sales_variation.value }}%</b> frente al período anterior{% else %}{{ orders_count }} órdenes analizadas{% endif %}</small></div></article>

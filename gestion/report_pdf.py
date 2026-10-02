@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import date, datetime
 from decimal import Decimal
 from collections import defaultdict
+from xml.sax.saxutils import escape
 
 from django.conf import settings
 from django.utils import timezone
@@ -11,7 +12,7 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, PageBreak
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.shapes import Drawing, String
 
@@ -200,6 +201,33 @@ def _bar_chart(title, groups):
     return drawing
 
 
+def _executive_chart(title, labels, series, money=True):
+    """Vector bars with a shared signed axis and a legend for each series."""
+    drawing = Drawing(250 * mm, 76 * mm)
+    drawing.add(String(0, 72 * mm, title, fontName="Helvetica-Bold", fontSize=10, fillColor=BLACK))
+    drawing.add(String(0, 66 * mm, "Millones de COP" if money else "Cantidad", fontSize=7, fillColor=GRAY))
+    chart = VerticalBarChart()
+    chart.x, chart.y, chart.width, chart.height = 22 * mm, 19 * mm, 220 * mm, 42 * mm
+    scale = 1000000 if money else 1
+    chart.data = [[float(value or 0) / scale for value in values] for _, values in series]
+    chart.categoryAxis.categoryNames = [str(label)[:28] for label in labels]
+    chart.categoryAxis.labels.fontSize = 6
+    chart.categoryAxis.labels.angle = 18
+    chart.categoryAxis.labels.dy = -8
+    chart.valueAxis.labels.fontSize = 7
+    values = [value for row in chart.data for value in row]
+    chart.valueAxis.valueMin = min(0, min(values, default=0))
+    chart.valueAxis.valueMax = max(0, max(values, default=0)) or (1 if chart.valueAxis.valueMin == 0 else 0)
+    palette = (RED, colors.HexColor("#438A68"), BLACK)
+    for index, (label, _) in enumerate(series):
+        color = palette[index % len(palette)]
+        chart.bars[index].fillColor = color
+        chart.bars[index].strokeColor = color
+        drawing.add(String((65 + index * 65) * mm, 66 * mm, label, fontSize=8, fillColor=color))
+    drawing.add(chart)
+    return drawing
+
+
 def build_module_report(module, config, queryset, params):
     output = BytesIO()
     doc = SimpleDocTemplate(
@@ -288,3 +316,8 @@ def build_module_report(module, config, queryset, params):
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     output.seek(0)
     return output
+
+
+def build_full_report(context, orders):
+    from .executive_pdf import build_executive_report
+    return build_executive_report(context, orders)

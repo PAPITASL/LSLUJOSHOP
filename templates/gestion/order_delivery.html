@@ -25,10 +25,7 @@
             {% if detail.cantidad_entregada >= detail.cantidad %}
               <select class="form-select form-select-sm delivery-status" disabled><option>Entregado</option></select>
             {% else %}
-              <select class="form-select form-select-sm delivery-status" name="entregar_{{ detail.pk }}">
-                <option value="0" selected>No entregado</option>
-                <option value="{{ detail.cantidad|subtract:detail.cantidad_entregada }}">Entregado</option>
-              </select>
+              <input class="form-control form-control-sm" type="number" name="entregar_{{ detail.pk }}" value="0" min="0" max="{{ detail.cantidad|subtract:detail.cantidad_entregada }}" step="1" aria-label="Cantidad a entregar de {{ detail.descripcion_producto }}">
             {% endif %}
           </td>
         </tr>
@@ -42,7 +39,7 @@
     <div class="col-12 col-md-4"><label class="form-label" for="metodo_pago">Método de pago</label><select id="metodo_pago" class="form-select" name="metodo_pago"><option value="">Seleccionar</option><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Nequi</option><option>Daviplata</option></select></div>
     <div class="col-12 col-md-4"><label class="form-label" for="referencia">Referencia</label><input id="referencia" class="form-control" name="referencia" maxlength="150" placeholder="Opcional"></div>
   </div>
-  <p class="delivery-note"><i class="bi bi-info-circle"></i> Al confirmar, únicamente los productos marcados como “Entregado” se descuentan del inventario. Los demás seguirán pendientes.</p>
+  <p class="delivery-note"><i class="bi bi-info-circle"></i> Al confirmar, se descuentan del inventario las cantidades indicadas en Entregar ahora. Los demás seguirán pendientes.</p>
   <div class="form-actions"><a class="btn btn-light" href="{{ return_url }}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Confirmar entrega</button></div>
 </form>
 {% endblock %}

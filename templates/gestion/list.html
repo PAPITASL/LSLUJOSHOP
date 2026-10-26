@@ -17,7 +17,7 @@
     <div class="input-group input-group-sm ms-auto live-search" style="max-width: 270px;">
       <span class="input-group-text"><i class="bi bi-search"></i></span>
       <input class="form-control" type="search" name="q" value="{{ query }}" placeholder="{% if module == 'ordenes' %}Orden, cliente o producto...{% else %}Buscar en tiempo real...{% endif %}" aria-label="{% if module == 'ordenes' %}Buscar por orden, cliente, estado, producto, marca o modelo{% else %}Buscar registros{% endif %}" autocomplete="off">
-      {% if request.GET %}<a class="btn btn-outline-secondary" href="{% url 'record_list' module %}" title="Restablecer todos los filtros" aria-label="Restablecer filtros"><i class="bi bi-x-lg"></i></a>{% endif %}
+      {% if request.GET or module == 'clientes' %}<a class="btn btn-outline-secondary" href="{% url 'record_list' module %}" title="Restablecer todos los filtros" aria-label="Restablecer filtros"><i class="bi bi-x-lg"></i></a>{% endif %}
     </div>
   </div>
   <div class="advanced-filters" id="advanced-filters">
@@ -39,7 +39,7 @@
     </div>
   </div>
   </form>
-  <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr>{% for field, label in config.columns %}<th>{{ label }}</th>{% endfor %}{% if module == 'productos' %}<th>Comprometidas</th><th>Libres</th><th>Entregadas</th><th>Órdenes vinculadas</th>{% endif %}<th class="text-end">Acciones</th></tr></thead><tbody>
+  <div class="table-responsive" id="record-results" aria-live="polite"><table class="table table-hover align-middle"><thead><tr>{% for field, label in config.columns %}<th>{{ label }}</th>{% endfor %}{% if module == 'productos' %}<th>Comprometidas</th><th>Libres</th><th>Entregadas</th><th>Órdenes vinculadas</th>{% endif %}<th class="text-end">Acciones</th></tr></thead><tbody>
   {% for record in records %}<tr>{% for field, label in config.columns %}<td>{{ record|get_attr:field }}</td>{% endfor %}
     {% if module == 'productos' %}
     <td>{{ record.committed_units }}{% if record.missing_units %}<small class="d-block text-danger">Faltan {{ record.missing_units }} unidades</small>{% endif %}</td>
@@ -58,15 +58,42 @@
   const form = document.getElementById('live-filter-form');
   if (!form) return;
   let timer;
-  const applyFilters = () => {
-    form.classList.add('is-filtering');
+  let controller;
+  const applyFilters = async () => {
+    clearTimeout(timer);
     const params = new URLSearchParams(new FormData(form));
     [...params.entries()].forEach(([key, value]) => { if (!value.trim()) params.delete(key); });
     const query = params.toString();
-    window.location.assign(form.action + (query ? `?${query}` : ''));
+    const url = form.action + (query ? `?${query}` : '');
+    if ('{{ module }}' !== 'clientes') {
+      form.classList.add('is-filtering');
+      window.location.assign(url);
+      return;
+    }
+    controller?.abort();
+    const current = new AbortController();
+    controller = current;
+    const results = document.getElementById('record-results');
+    results.setAttribute('aria-busy', 'true');
+    try {
+      const response = await fetch(url, {signal: current.signal});
+      if (!response.ok || response.redirected) throw new Error('No disponible');
+      const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const next = page.getElementById('record-results');
+      if (!next) throw new Error('Sin resultados');
+      if (current.signal.aborted) return;
+      results.innerHTML = next.innerHTML;
+      history.replaceState(null, '', url);
+      form.querySelector('a.btn-outline-danger').href = page.querySelector('#live-filter-form a.btn-outline-danger').href;
+    } catch (error) {
+      if (error.name !== 'AbortError') window.location.assign(url);
+    } finally {
+      if (!current.signal.aborted) results.removeAttribute('aria-busy');
+    }
   };
   form.querySelectorAll('select, input[type="date"], input[type="month"]').forEach(control => control.addEventListener('change', applyFilters));
   form.querySelectorAll('input[type="search"], input[type="text"], input[type="number"]').forEach(control => control.addEventListener('input', () => {
+    controller?.abort();
     clearTimeout(timer);
     timer = setTimeout(applyFilters, 450);
   }));

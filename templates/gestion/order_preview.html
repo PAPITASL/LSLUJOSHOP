@@ -1,4 +1,17 @@
-{% load gestion_extras %}
+{% load gestion_extras static %}
+<svg class="w-100 mb-4" viewBox="0 0 700 158" role="img" aria-label="LujoShop, partes y accesorios, emblema LS" style="display:block;">
+  <defs>
+    <filter id="receipt-brand-cutout" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  3 3 3 0 -0.55" />
+    </filter>
+  </defs>
+  <path d="M0 10H700V95L0 130Z" fill="#151615" />
+  <path d="M0 130L700 95V107L0 142Z" fill="#EF0019" />
+  <svg x="16" y="28" width="400" height="85" viewBox="56 690 1154 245">
+    <image href="{% static 'img/lujoshop-brand.jpeg' %}" width="1254" height="1254" filter="url(#receipt-brand-cutout)" />
+  </svg>
+  <image x="480" y="64" width="205" height="82" href="{% static 'img/ls-transparent.png' %}" preserveAspectRatio="xMidYMid meet" />
+</svg>
 <div class="d-flex justify-content-between gap-3 flex-wrap mb-4">
   <div><small class="text-muted">ORDEN / FACTURA</small><h3 class="mb-1">N.º {{ order.numero_orden }}</h3><div class="text-muted">{{ order.fecha|date:"d/m/Y H:i" }}</div></div>
   <div class="text-end"><span class="badge bg-light text-dark border">{{ order.estado }}</span>{% if order.vendedor %}<div class="text-muted mt-2">Vendedor: {{ order.vendedor }}</div>{% endif %}</div>

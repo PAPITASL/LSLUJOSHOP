@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% load gestion_extras %}
 {% block title %}Registrar entrega | LujoShop{% endblock %}
 {% block page_title %}Entrega de la orden {{ order.numero_orden }}{% endblock %}
-{% block page_description %}Marca únicamente lo que el cliente recibe hoy{% endblock %}
+{% block page_description %}Registra entregas o corrige productos marcados por error{% endblock %}
 {% block content %}
 <form method="post" class="content-card delivery-card">{% csrf_token %}
   <div class="delivery-header">
@@ -23,9 +23,10 @@
           <td><strong>{{ detail.cantidad|subtract:detail.cantidad_entregada }}</strong></td>
           <td>
             {% if detail.cantidad_entregada >= detail.cantidad %}
-              <select class="form-select form-select-sm delivery-status" disabled><option>Entregado</option></select>
+              <select class="form-select form-select-sm delivery-status" name="estado_entrega_{{ detail.pk }}" aria-label="Estado de entrega de {{ detail.descripcion_producto }}"><option value="" selected>Entregado</option><option value="no_entregado">Cambiar a no entregado</option></select>
             {% else %}
               <input class="form-control form-control-sm" type="number" name="entregar_{{ detail.pk }}" value="0" min="0" max="{{ detail.cantidad|subtract:detail.cantidad_entregada }}" step="1" aria-label="Cantidad a entregar de {{ detail.descripcion_producto }}">
+              {% if detail.cantidad_entregada %}<select class="form-select form-select-sm mt-2" name="estado_entrega_{{ detail.pk }}" aria-label="Corregir entrega de {{ detail.descripcion_producto }}"><option value="" selected>Mantener entrega parcial</option><option value="no_entregado">Cambiar a no entregado</option></select>{% endif %}
             {% endif %}
           </td>
         </tr>
@@ -39,7 +40,7 @@
     <div class="col-12 col-md-4"><label class="form-label" for="metodo_pago">Método de pago</label><select id="metodo_pago" class="form-select" name="metodo_pago"><option value="">Seleccionar</option><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Nequi</option><option>Daviplata</option></select></div>
     <div class="col-12 col-md-4"><label class="form-label" for="referencia">Referencia</label><input id="referencia" class="form-control" name="referencia" maxlength="150" placeholder="Opcional"></div>
   </div>
-  <p class="delivery-note"><i class="bi bi-info-circle"></i> Al confirmar, se descuentan del inventario las cantidades indicadas en Entregar ahora. Los demás seguirán pendientes.</p>
-  <div class="form-actions"><a class="btn btn-light" href="{{ return_url }}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Confirmar entrega</button></div>
+  <p class="delivery-note"><i class="bi bi-info-circle"></i> Al guardar, Entregar ahora descuenta unidades del inventario. Cambiar a no entregado devuelve las unidades entregadas al inventario y deja el producto pendiente; los abonos registrados se conservan.</p>
+  <div class="form-actions"><a class="btn btn-light" href="{{ return_url }}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Guardar cambios</button></div>
 </form>
 {% endblock %}

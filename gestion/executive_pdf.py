@@ -309,6 +309,10 @@ def build_executive_report(context, orders):
         order_rows.append((f"{order.numero_orden} · {local:%d/%m/%Y}\n{order.cliente}\n{order.estado}",money(order.total_venta),money(order.total_abonado),money(order.saldo_pendiente),money(order.ganancia_neta)))
     table('Seguimiento de órdenes',['Orden / cliente / estado','Venta','Abonado','Pendiente','Resultado'],order_rows,[width*.36,width*.16,width*.16,width*.16,width*.16])
 
+    if context.get('monthly_finance') is not None:
+        from .monthly_finance_pdf import MonthlyFinancePage
+        story.extend([PageBreak(), MonthlyFinancePage(context['monthly_finance'], width)])
+
     def footer(canvas,document):
         canvas.saveState()
         canvas.setStrokeColor(RED)

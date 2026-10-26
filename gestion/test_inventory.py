@@ -106,6 +106,51 @@ class InventoryWorkflowTests(TestCase):
         self.assertEqual(self.product.cantidad_disponible, 1)
         self.assertEqual(self.detail.cantidad_entregada, 0)
 
+    def test_delivery_can_be_reset_and_delivered_again_without_stock_drift(self):
+        self.deliver(4)
+        url = reverse("order_delivery", args=[self.order.pk])
+        self.assertContains(self.client.get(url), "Cambiar a no entregado")
+        data = {f"estado_entrega_{self.detail.pk}": "no_entregado", "abono": "0"}
+        for _ in range(2):
+            self.assertEqual(self.client.post(url, data).status_code, 302)
+            self.product.refresh_from_db()
+            self.detail.refresh_from_db()
+            self.order.refresh_from_db()
+            self.assertEqual(self.product.cantidad_disponible, 5)
+            self.assertEqual(self.detail.cantidad_entregada, 0)
+            self.assertEqual(self.order.estado, "Pagada")
+        self.assertContains(self.client.get(reverse("pending_deliveries")), "TEST-1")
+        self.assertEqual(self.deliver(4).status_code, 302)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.cantidad_disponible, 1)
+
+    def test_reset_partial_delivery_preserves_pending_balance(self):
+        self.order.total_venta = Decimal("100")
+        self.order.saldo_pendiente = Decimal("100")
+        self.order.save()
+        self.deliver(2)
+        response = self.client.post(reverse("order_delivery", args=[self.order.pk]), {
+            f"estado_entrega_{self.detail.pk}": "no_entregado",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.product.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.product.cantidad_disponible, 5)
+        self.assertEqual(self.order.estado, "Pendiente")
+        self.assertEqual(self.order.saldo_pendiente, Decimal("100"))
+
+    def test_reset_and_delivery_of_same_product_is_rejected(self):
+        self.deliver(2)
+        response = self.client.post(reverse("order_delivery", args=[self.order.pk]), {
+            f"estado_entrega_{self.detail.pk}": "no_entregado",
+            f"entregar_{self.detail.pk}": "1",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.detail.refresh_from_db()
+        self.assertEqual(self.product.cantidad_disponible, 3)
+        self.assertEqual(self.detail.cantidad_entregada, 2)
+
     def test_cancel_returns_delivered_units_only_once(self):
         self.deliver(2)
         url = reverse("order_cancel", args=[self.order.pk])
@@ -122,6 +167,29 @@ class InventoryWorkflowTests(TestCase):
         product = response.context["records"][0]
         self.assertEqual((product.committed_units, product.free_units), (4, 1))
         self.assertContains(response, reverse("order_delivery", args=[self.order.pk]))
+
+    def test_exhausted_delivery_leaves_inventory_and_return_restores_it(self):
+        self.product.cantidad_disponible = 4
+        self.product.save()
+        self.assertEqual(self.deliver(4).status_code, 302)
+        response = self.client.get(reverse("record_list", args=["productos"]))
+        self.assertEqual(response.context["records"], [])
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad_entregada, 4)
+        self.assertEqual(self.detail.producto_id, self.product.pk)
+        report = self.client.get(reverse("reports_dashboard"))
+        self.assertEqual(report.context["inventory_products"], 0)
+        self.assertEqual(report.context["exhausted_count"], 0)
+        self.client.post(reverse("order_delivery", args=[self.order.pk]), {
+            f"estado_entrega_{self.detail.pk}": "no_entregado",
+        })
+        response = self.client.get(reverse("record_list", args=["productos"]))
+        self.assertEqual([item.pk for item in response.context["records"]], [self.product.pk])
+
+    def test_delivery_keeps_remaining_stock_in_inventory(self):
+        self.deliver(4)
+        response = self.client.get(reverse("record_list", args=["productos"]))
+        self.assertEqual(response.context["records"][0].cantidad_disponible, 1)
 
     def test_pending_stock_is_not_counted_twice_for_same_product(self):
         self.create_record(DetalleOrden, orden=self.order, producto=self.product,

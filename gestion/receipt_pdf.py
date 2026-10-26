@@ -15,7 +15,7 @@ from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Space
 from .models import DetalleOrden
 
 
-RED = colors.HexColor("#E6313A")
+RED = colors.HexColor("#EF0019")
 BLACK = colors.HexColor("#151615")
 GRAY = colors.HexColor("#5C5F62")
 LIGHT = colors.HexColor("#E9E9E9")
@@ -27,6 +27,9 @@ def money(value):
 
 
 def _logo_path():
+    brand = Path(settings.BASE_DIR) / "static" / "img" / "lujoshop-brand.jpeg"
+    if brand.exists():
+        return brand
     preferred = Path(settings.BASE_DIR) / "static" / "img" / "lg-transparent-final.png"
     return preferred if preferred.exists() else Path(settings.BASE_DIR) / "static" / "img" / "lg.png"
 
@@ -59,35 +62,56 @@ def _draw_badge(canvas, x, y):
     canvas.drawCentredString(x, y - 4 * mm, "LS")
 
 
+def _draw_brand_region(canvas, x, y, width, region):
+    """Show part of the original artwork, preserving its proportions."""
+    source_left, source_top, source_right, source_bottom = region
+    size = width / (source_right - source_left)
+    height = size * (source_bottom - source_top)
+    canvas.saveState()
+    clip = canvas.beginPath()
+    clip.rect(x, y, width, height)
+    canvas.clipPath(clip, stroke=0, fill=0)
+    canvas.drawImage(
+        ImageReader(str(_logo_path())),
+        x - source_left * size, y - (1 - source_bottom) * size,
+        width=size, height=size, mask=[0, 48, 0, 48, 0, 48],
+    )
+    canvas.restoreState()
+
+
 def _draw_header(canvas, document):
     width, height = letter
     left, right = document.leftMargin, width - document.rightMargin
     top, bottom = height - 12 * mm, height - 42 * mm
     canvas.saveState()
     canvas.setFillColor(BLACK)
-    canvas.setStrokeColor(BLACK)
-    canvas.setLineWidth(0)
-    canvas.polygon = None
-    path = canvas.beginPath()
-    path.moveTo(left, top)
-    path.lineTo(right, top)
-    path.lineTo(right, bottom + 9 * mm)
-    path.lineTo(left, bottom)
-    path.close()
-    canvas.drawPath(path, fill=1, stroke=0)
+    panel = canvas.beginPath()
+    panel.moveTo(left, top)
+    panel.lineTo(right, top)
+    panel.lineTo(right, bottom + 9 * mm)
+    panel.lineTo(left, bottom)
+    panel.close()
+    canvas.drawPath(panel, fill=1, stroke=0)
     canvas.setFillColor(RED)
     stripe = canvas.beginPath()
-    stripe.moveTo(left, bottom + 2.5 * mm)
-    stripe.lineTo(right, bottom + 11.5 * mm)
-    stripe.lineTo(right, bottom + 8 * mm)
-    stripe.lineTo(left, bottom - 1 * mm)
+    stripe.moveTo(left, bottom)
+    stripe.lineTo(right, bottom + 9 * mm)
+    stripe.lineTo(right, bottom + 6 * mm)
+    stripe.lineTo(left, bottom - 3 * mm)
     stripe.close()
     canvas.drawPath(stripe, fill=1, stroke=0)
-    canvas.drawImage(ImageReader(str(_logo_path())), left + 2 * mm, bottom + 8 * mm, width=92 * mm, height=23 * mm, preserveAspectRatio=True, anchor="sw", mask="auto")
-    canvas.setFillColor(colors.white)
-    canvas.setFont("Helvetica", 7)
-    canvas.drawString(left + 29 * mm, bottom + 7 * mm, "Accesorios para carros")
-    _draw_badge(canvas, right - 20 * mm, bottom + 17 * mm)
+    _draw_brand_region(canvas, left + 4 * mm, bottom + 7 * mm,
+                       100 * mm, (0.045, 0.55, 0.965, 0.745))
+    # Draw last so the emblem crosses the diagonal and red stripe.
+    emblem = ImageReader(str(Path(settings.BASE_DIR) / "static" / "img" / "ls-transparent.png"))
+    image_width, image_height = emblem.getSize()
+    emblem_width = 54 * mm
+    emblem_height = emblem_width * image_height / image_width
+    canvas.drawImage(
+        emblem, right - 58 * mm, bottom - 3 * mm,
+        width=emblem_width, height=emblem_height,
+        preserveAspectRatio=True, anchor="c", mask="auto",
+    )
     canvas.restoreState()
 
 
@@ -125,7 +149,7 @@ def build_order_receipt(order):
     output = BytesIO()
     doc = SimpleDocTemplate(
         output, pagesize=letter, rightMargin=18 * mm, leftMargin=18 * mm,
-        topMargin=47 * mm, bottomMargin=30 * mm,
+        topMargin=50 * mm, bottomMargin=30 * mm,
         title=f"Orden {order.numero_orden} - LujoShop", author="LujoShop",
     )
     styles = getSampleStyleSheet()

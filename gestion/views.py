@@ -14,12 +14,13 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import DetalleOrdenFormSet, FORM_CLASSES, PRODUCT_CATEGORIES
+from .client_identity import matching_client_ids
 from .models import (
     Abonos, Clientes, Comisiones, DetalleOrden, MovimientosDinero,
     Ordenes, Productos, Recibos, Vendedores,
 )
 from .services import obtener_trm_oficial
-from .inventory import summarize_inventory
+from .inventory import inventory_products, summarize_inventory
 from .report_periods import ReportMonth, period_query
 from .report_insights import build_monthly_insights
 from .report_priorities import build_next_month_priorities
@@ -132,6 +133,8 @@ def _apply_module_filters(records, request, module, config):
                 | Q(modelo_producto__icontains=query)
             )
             search_filter |= Q(pk__in=matching_details.values("orden_id"))
+        if module == "clientes":
+            search_filter = Q(pk__in=matching_client_ids(records, query))
         records = records.filter(search_filter)
 
     for field_name, _label, filter_type in MODULE_FILTERS.get(module, ()):
@@ -491,7 +494,7 @@ def reports_dashboard(request):
     expenses = movements.filter(tipo_movimiento__in=["EGRESO", "SALIDA"]).aggregate(total=Sum("valor_pesos"))["total"] or zero
     cash_max = max(float(income), float(expenses), 1)
 
-    inventory = Productos.objects.all()
+    inventory = inventory_products()
     inventory_units = inventory.aggregate(total=Sum("cantidad_disponible"))["total"] or 0
     inventory_value = sum(((item.cantidad_disponible or 0) * (item.costo_pesos or zero) for item in inventory), zero)
     exhausted_count = inventory.filter(cantidad_disponible=0).count()
@@ -566,6 +569,8 @@ def reports_dashboard(request):
     if exporting:
         report_orders = orders.order_by("fecha", "pk")
         if monthly:
+            from .monthly_finance import build_monthly_finance
+            context["monthly_finance"] = build_monthly_finance(monthly, as_of=generated_at)
             report_orders = list(report_orders)
             for order in report_orders:
                 order.total_abonado = order.report_paid
@@ -693,7 +698,7 @@ def _dashboard_profesional(request):
     expenses = movements.filter(tipo_movimiento__in=["EGRESO", "SALIDA"]).aggregate(total=Sum("valor_pesos"))["total"] or zero
     movement_max = max(float(income), float(expenses), 1)
 
-    inventory = Productos.objects.all()
+    inventory = inventory_products()
     inventory_units = inventory.aggregate(total=Sum("cantidad_disponible"))["total"] or 0
     inventory_value = sum(((item.cantidad_disponible or 0) * (item.costo_pesos or zero) for item in inventory), zero)
     exhausted = inventory.filter(cantidad_disponible=0)
@@ -760,7 +765,7 @@ def _dashboard_anterior(request):
         money = MovimientosDinero.objects.filter(fecha__year=now.year, fecha__month=now.month)
         ingresos = money.filter(tipo_movimiento__iexact="INGRESO").aggregate(total=Sum("valor_pesos"))["total"] or zero
         egresos = money.filter(tipo_movimiento__iexact="EGRESO").aggregate(total=Sum("valor_pesos"))["total"] or zero
-        low_stock = Productos.objects.filter(cantidad_disponible__lte=5).order_by("cantidad_disponible", "nombre")
+        low_stock = inventory_products().filter(cantidad_disponible__lte=5).order_by("cantidad_disponible", "nombre")
         pending_commissions = Comisiones.objects.filter(estado_pago__iexact="PENDIENTE")
         first_year, first_month = months[0]
         sales_rows = Ordenes.objects.filter(
@@ -834,9 +839,9 @@ def _dashboard_anterior(request):
             "width": round(((row["units"] or 0) / max_units) * 100, 1),
         } for row in top_products_rows]
         product_rows = [
-            {"label": "Agotados", "value": Productos.objects.filter(cantidad_disponible=0).count()},
-            {"label": "Existencias bajas", "value": Productos.objects.filter(cantidad_disponible__gt=0, cantidad_disponible__lte=5).count()},
-            {"label": "Disponibles", "value": Productos.objects.filter(cantidad_disponible__gt=5).count()},
+            {"label": "Agotados", "value": inventory_products().filter(cantidad_disponible=0).count()},
+            {"label": "Existencias bajas", "value": inventory_products().filter(cantidad_disponible__gt=0, cantidad_disponible__lte=5).count()},
+            {"label": "Disponibles", "value": inventory_products().filter(cantidad_disponible__gt=5).count()},
         ]
         product_rows = product_rows if any(row["value"] for row in product_rows) else []
         product_donut, product_donut_total, product_demo = _dashboard_donut(product_rows, "label", "value", [{"label": "Disponibles", "value": 18}, {"label": "Existencias bajas", "value": 6}, {"label": "Agotados", "value": 3}])
@@ -852,7 +857,7 @@ def _dashboard_anterior(request):
         context = {
             "current_month": now.strftime("%B").capitalize(), "sales_month": monthly["ventas"] or zero,
             "profit_month": monthly["ganancia"] or zero, "orders_month": monthly_orders.count(),
-            "pending_balance": portfolio["saldo"] or zero, "total_products": Productos.objects.count(),
+            "pending_balance": portfolio["saldo"] or zero, "total_products": inventory_products().count(),
             "total_clients": Clientes.objects.count(), "low_stock_count": low_stock.count(),
             "low_stock_products": low_stock[:5], "pending_commissions_count": pending_commissions.count(),
             "pending_commissions_total": pending_commissions.aggregate(total=Sum("valor_comision"))["total"] or zero,
@@ -929,7 +934,7 @@ def record_list(request, module):
         params["periodo"] = timezone.localdate().strftime("%Y-%m")
         return redirect(f"{request.path}?{params.urlencode()}")
 
-    records = config["model"].objects.all().order_by("-pk")
+    records = (inventory_products() if module == "productos" else config["model"].objects.all()).order_by("-pk")
     records, query = _apply_module_filters(records, request, module, config)
 
     controls = []
@@ -1012,6 +1017,8 @@ def record_form(request, module, pk=None):
                 _refresh_order_balance(saved.orden)
             messages.success(request, f'Registro {"actualizado" if instance else "creado"} correctamente.')
             return redirect("record_list", module=module)
+        except ValidationError as error:
+            form.add_error(None, "; ".join(error.messages))
         except DatabaseError as error:
             form.add_error(None, f"No se pudo guardar el registro: {error}")
     return render(request, "gestion/form.html", {"module": module, "config": config, "form": form, "editing": instance is not None})
@@ -1352,7 +1359,10 @@ def order_delivery(request, pk):
                 raise ValidationError(f"El abono no puede superar el saldo pendiente de ${order.saldo_pendiente:,.0f}.")
 
             requested = {}
+            reset_deliveries = set()
             for detail in details:
+                if request.POST.get(f"estado_entrega_{detail.pk}") == "no_entregado":
+                    reset_deliveries.add(detail.pk)
                 try:
                     quantity = int(request.POST.get(f"entregar_{detail.pk}") or 0)
                 except ValueError:
@@ -1361,8 +1371,10 @@ def order_delivery(request, pk):
                 if quantity < 0 or quantity > pending:
                     raise ValidationError(f"Puedes entregar entre 0 y {pending} unidades de {detail.descripcion_producto}.")
                 requested[detail.pk] = quantity
+                if detail.pk in reset_deliveries and quantity:
+                    raise ValidationError("No puedes entregar y marcar como no entregado el mismo producto.")
 
-            if not any(requested.values()) and not payment:
+            if not any(requested.values()) and not payment and not reset_deliveries:
                 raise ValidationError("Indica al menos un producto para entregar o un valor de abono.")
 
             with transaction.atomic():
@@ -1373,10 +1385,19 @@ def order_delivery(request, pk):
                     DetalleOrden.objects.select_for_update()
                     .filter(orden=locked_order).order_by("pk")
                 )
-                product_ids = {item.producto_id for item in locked_details if requested.get(item.pk) and item.producto_id}
+                product_ids = {item.producto_id for item in locked_details if (requested.get(item.pk) or item.pk in reset_deliveries) and item.producto_id}
                 products = {item.pk: item for item in Productos.objects.select_for_update().filter(pk__in=product_ids)}
 
                 for detail in locked_details:
+                    if detail.pk in reset_deliveries:
+                        if detail.producto_id and detail.cantidad_entregada:
+                            product = products[detail.producto_id]
+                            product.cantidad_disponible += detail.cantidad_entregada
+                            product.estado = "Disponible"
+                            product.save(update_fields=["cantidad_disponible", "estado"])
+                        detail.cantidad_entregada = 0
+                        detail.save(update_fields=["cantidad_entregada"])
+                        continue
                     quantity = requested.get(detail.pk, 0)
                     if not quantity:
                         continue
@@ -1411,18 +1432,20 @@ def order_delivery(request, pk):
                 remaining = DetalleOrden.objects.filter(orden=locked_order, cantidad_entregada__lt=F("cantidad")).exists()
                 if not remaining:
                     locked_order.estado = "Entregada"
-                elif any(requested.values()):
+                elif any(detail.cantidad_entregada for detail in locked_details):
                     locked_order.estado = "Entrega parcial"
                 elif locked_order.saldo_pendiente == 0:
                     locked_order.estado = "Pagada"
                 elif locked_order.total_abonado > 0:
                     locked_order.estado = "Abonada"
+                elif reset_deliveries:
+                    locked_order.estado = "Pendiente"
                 locked_order.save(update_fields=["total_abonado", "saldo_pendiente", "estado", "actualizado_en"])
                 _sync_order_commission(locked_order)
                 if created_payment:
                     _sync_payment_movement(created_payment, locked_order)
 
-            messages.success(request, "Entrega y pago registrados correctamente.")
+            messages.success(request, "Entrega y pago actualizados correctamente.")
             if request.GET.get("next") == reverse("pending_deliveries"):
                 return redirect("pending_deliveries")
             return redirect("record_list", module="ordenes")
@@ -1492,7 +1515,7 @@ def order_cancel(request, pk):
 @login_required
 def module_report(request, module):
     config = _module_or_404(module)
-    records = config["model"].objects.all().order_by("-pk")
+    records = (inventory_products() if module == "productos" else config["model"].objects.all()).order_by("-pk")
     records, _ = _apply_module_filters(records, request, module, config)
     pdf = build_module_report(module, config, records, request.GET)
     period = request.GET.get("periodo") or "completo"

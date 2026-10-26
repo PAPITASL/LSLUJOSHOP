@@ -205,7 +205,10 @@ def import_excel(module, uploaded_file):
             pending.append(instance)
     if errors:
         return 0, errors
-    with transaction.atomic():
-        for instance in pending:
-            instance.save()
+    try:
+        with transaction.atomic():
+            for instance in pending:
+                instance.save()
+    except ValidationError as error:
+        return 0, error.messages
     return len(pending), []

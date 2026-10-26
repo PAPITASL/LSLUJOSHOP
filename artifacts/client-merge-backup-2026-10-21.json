@@ -1,0 +1,256 @@
+{
+  "created_at": "2026-10-21T13:47:46.034Z",
+  "groups": [
+    [
+      {
+        "id": 26,
+        "nombre": "WILSON ESPINOZA",
+        "telefono": "3105861862",
+        "ciudad": "Sogamoso",
+        "direccion": "Cra 12 N 10-71",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.365Z",
+        "actualizado_en": "2026-08-04T22:12:52.365Z"
+      },
+      {
+        "id": 85,
+        "nombre": "WILSON ESPINOZA",
+        "telefono": "3105861862",
+        "ciudad": "Sogamoso",
+        "direccion": "CRA 12 N 10-71",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.415Z",
+        "actualizado_en": "2026-08-04T22:12:52.415Z"
+      }
+    ],
+    [
+      {
+        "id": 32,
+        "nombre": "JOSE BARLIZA",
+        "telefono": "3014768467",
+        "ciudad": "Riohacha",
+        "direccion": "CALLE 10 N 5-02",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.369Z",
+        "actualizado_en": "2026-08-04T22:12:52.369Z"
+      },
+      {
+        "id": 68,
+        "nombre": "JOSE BARLIZA",
+        "telefono": "3014768467",
+        "ciudad": "Riohacha",
+        "direccion": "CALLE 10 N 5-02",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.399Z",
+        "actualizado_en": "2026-08-04T22:12:52.399Z"
+      }
+    ],
+    [
+      {
+        "id": 36,
+        "nombre": "JAVIER RODRIGUEZ",
+        "telefono": "3108190666",
+        "ciudad": "Medelliin",
+        "direccion": "CRA 70 N 13-25",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.373Z",
+        "actualizado_en": "2026-08-04T22:12:52.373Z"
+      },
+      {
+        "id": 65,
+        "nombre": "JAVIER RODRIGUEZ",
+        "telefono": "3108190666",
+        "ciudad": "Medellin",
+        "direccion": "CRA 70 N 13-25",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.397Z",
+        "actualizado_en": "2026-08-04T22:12:52.397Z"
+      }
+    ],
+    [
+      {
+        "id": 77,
+        "nombre": "JORGE ROJAS",
+        "telefono": "3143119543",
+        "ciudad": "Bogota",
+        "direccion": "PARQUEADERO FONTIBON",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.409Z",
+        "actualizado_en": "2026-08-04T22:12:52.409Z"
+      },
+      {
+        "id": 164,
+        "nombre": "JORGE ROJAS",
+        "telefono": "3143119543",
+        "ciudad": "Bogota",
+        "direccion": "SALIDA CALLE 13 VIA MOSQUERA",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.464Z",
+        "actualizado_en": "2026-08-04T22:12:52.464Z"
+      },
+      {
+        "id": 244,
+        "nombre": "JORGE ROJAS",
+        "telefono": "314 3119543",
+        "ciudad": "Bogotá",
+        "direccion": "Calle 54c sur # 82b bis -22",
+        "observaciones": "",
+        "creado_en": "2026-10-13T13:48:41.461Z",
+        "actualizado_en": "2026-10-13T13:48:41.461Z"
+      }
+    ],
+    [
+      {
+        "id": 145,
+        "nombre": "DOUGLAS RIVERA",
+        "telefono": "3174274252",
+        "ciudad": "Bucaramanga",
+        "direccion": "CRA 14w N 60bis-53",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.454Z",
+        "actualizado_en": "2026-08-04T22:12:52.454Z"
+      },
+      {
+        "id": 155,
+        "nombre": "DOUGLAS RIVERA",
+        "telefono": "3174274252",
+        "ciudad": "Bucaramanga",
+        "direccion": "CRA 14w N 60bis-53",
+        "observaciones": null,
+        "creado_en": "2026-08-04T22:12:52.460Z",
+        "actualizado_en": "2026-08-04T22:12:52.460Z"
+      }
+    ],
+    [
+      {
+        "id": 191,
+        "nombre": "OMAR CRUZ",
+        "telefono": "310 6767927",
+        "ciudad": "N/A",
+        "direccion": "Ibagué/Tolima",
+        "observaciones": "Ciudadela Simón bolivar 1 etapa Manzana 5 casa 19",
+        "creado_en": "2026-08-28T15:43:59.676Z",
+        "actualizado_en": "2026-08-28T15:43:59.676Z"
+      },
+      {
+        "id": 255,
+        "nombre": "OMAR CRUZ",
+        "telefono": "3106767927",
+        "ciudad": "Ibague Tolima",
+        "direccion": "Manzana 25 Casa 19, Ciudadela Simón Bolívar I Etapa",
+        "observaciones": "",
+        "creado_en": "2026-10-20T14:31:54.963Z",
+        "actualizado_en": "2026-10-20T14:31:54.963Z"
+      }
+    ]
+  ],
+  "references": [
+    {
+      "table": "ordenes",
+      "column": "cliente_id",
+      "rows": []
+    },
+    {
+      "table": "ordenes",
+      "column": "cliente_id",
+      "rows": []
+    },
+    {
+      "table": "ordenes",
+      "column": "cliente_id",
+      "rows": []
+    },
+    {
+      "table": "ordenes",
+      "column": "cliente_id",
+      "rows": [
+        {
+          "id": 109,
+          "numero_orden": "374",
+          "fecha": "2026-10-13T13:48:00Z",
+          "cliente_id": 244,
+          "vendedor_id": 5,
+          "tasa_dolar": "0.0000",
+          "flete_dolares": "0.00",
+          "flete_pesos": "0.00",
+          "subtotal_venta": "800000.00",
+          "costo_productos_pesos": "220064.00",
+          "otros_costos_pesos": "0.00",
+          "costo_total_pesos": "220064.00",
+          "descuento": "0.00",
+          "total_venta": "800000.00",
+          "ganancia_bruta": "579936.00",
+          "comision_vendedor": "56000.00",
+          "ganancia_neta": "523936.00",
+          "total_abonado": "0.00",
+          "saldo_pendiente": "800000.00",
+          "estado": "Pendiente",
+          "observaciones": "",
+          "creado_en": "2026-10-13T13:49:51.097Z",
+          "actualizado_en": "2026-10-13T21:56:38.916Z"
+        }
+      ]
+    },
+    {
+      "table": "ordenes",
+      "column": "cliente_id",
+      "rows": []
+    },
+    {
+      "table": "ordenes",
+      "column": "cliente_id",
+      "rows": [
+        {
+          "id": 30,
+          "numero_orden": "296",
+          "fecha": "2026-08-25T20:33:00Z",
+          "cliente_id": 191,
+          "vendedor_id": 3,
+          "tasa_dolar": "0.0000",
+          "flete_dolares": "0.00",
+          "flete_pesos": "0.00",
+          "subtotal_venta": "800000.00",
+          "costo_productos_pesos": "161374.00",
+          "otros_costos_pesos": "0.00",
+          "costo_total_pesos": "161374.00",
+          "descuento": "0.00",
+          "total_venta": "800000.00",
+          "ganancia_bruta": "638626.00",
+          "comision_vendedor": "40000.00",
+          "ganancia_neta": "598626.00",
+          "total_abonado": "0.00",
+          "saldo_pendiente": "800000.00",
+          "estado": "Cancelada",
+          "observaciones": "",
+          "creado_en": "2026-08-28T20:37:12.355Z",
+          "actualizado_en": "2026-10-02T19:52:41.995Z"
+        },
+        {
+          "id": 123,
+          "numero_orden": "388",
+          "fecha": "2026-10-20T14:34:00Z",
+          "cliente_id": 255,
+          "vendedor_id": 5,
+          "tasa_dolar": "0.0000",
+          "flete_dolares": "0.00",
+          "flete_pesos": "0.00",
+          "subtotal_venta": "280000.00",
+          "costo_productos_pesos": "0.00",
+          "otros_costos_pesos": "0.00",
+          "costo_total_pesos": "0.00",
+          "descuento": "0.00",
+          "total_venta": "280000.00",
+          "ganancia_bruta": "280000.00",
+          "comision_vendedor": "19600.00",
+          "ganancia_neta": "260400.00",
+          "total_abonado": "0.00",
+          "saldo_pendiente": "280000.00",
+          "estado": "Pendiente",
+          "observaciones": "",
+          "creado_en": "2026-10-20T14:36:11.589Z",
+          "actualizado_en": "2026-10-20T14:36:11.668Z"
+        }
+      ]
+    }
+  ]
+}

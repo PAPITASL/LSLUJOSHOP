@@ -1,3 +1,10 @@
+def inventory_products():
+    """Keep delivered, exhausted products only in sales history."""
+    from .models import Productos
+
+    return Productos.objects.exclude(cantidad_disponible__lte=0, estado__iexact="Vendido")
+
+
 def summarize_inventory(product, details):
     """Physical stock leaves on delivery; pending sales commit available units."""
     product.order_links = []

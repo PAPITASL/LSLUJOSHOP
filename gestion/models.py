@@ -5,7 +5,10 @@
 #   * Make sure each ForeignKey and OneToOneField has `on_delete` set to the desired behavior
 #   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
 # Feel free to rename the models, but don't rename db_table values or field names.
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import connections, models, router, transaction
+
+from .client_identity import client_key
 
 
 class Clientes(models.Model):
@@ -24,6 +27,27 @@ class Clientes(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    def clean(self):
+        super().clean()
+        key = client_key(self.nombre, self.telefono)
+        if key is None:
+            return
+        database = self._state.db or router.db_for_write(type(self), instance=self)
+        for other in type(self).objects.using(database).exclude(pk=self.pk).only("id", "nombre", "telefono"):
+            if client_key(other.nombre, other.telefono) == key:
+                raise ValidationError({"nombre": f"Ya existe este cliente con el mismo nombre y teléfono (ID {other.pk}). Edita el registro existente."})
+
+    def save(self, *args, **kwargs):
+        database = kwargs.get("using") or router.db_for_write(type(self), instance=self)
+        with transaction.atomic(using=database):
+            if connections[database].vendor == "postgresql":
+                # Serialize customer writes so two simultaneous submissions cannot
+                # both pass the duplicate check before either has committed.
+                with connections[database].cursor() as cursor:
+                    cursor.execute('LOCK TABLE "clientes" IN SHARE ROW EXCLUSIVE MODE')
+            self.clean()
+            return super().save(*args, **kwargs)
 
 
 class Vendedores(models.Model):

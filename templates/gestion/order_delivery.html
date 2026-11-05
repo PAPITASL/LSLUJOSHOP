@@ -17,7 +17,7 @@
       <thead><tr><th>Producto</th><th>Solicitado</th><th>Entregado</th><th>Pendiente</th><th>Entregar ahora</th></tr></thead>
       <tbody>{% for detail in details %}
         <tr>
-          <td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.producto %}<small>Stock actual: {{ detail.producto.cantidad_disponible }}</small>{% endif %}</td>
+          <td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.producto %}<small>Referencia #{{ detail.producto_id }} · Existencias físicas: {{ detail.producto.cantidad_disponible }} · Puedes entregar en esta línea: {{ detail.ready_quantity }}</small>{% else %}<small>Sin producto de inventario asociado; registra primero su compra.</small>{% endif %}</td>
           <td>{{ detail.cantidad }}</td>
           <td><span class="delivery-done">{{ detail.cantidad_entregada }}</span></td>
           <td><strong>{{ detail.cantidad|subtract:detail.cantidad_entregada }}</strong></td>

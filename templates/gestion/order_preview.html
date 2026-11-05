@@ -20,9 +20,9 @@
   <div class="small text-muted fw-bold mb-2">DATOS DEL CLIENTE</div>
   <div class="row g-3">
     <div class="col-12 col-md-6"><div class="small text-muted">Nombre</div><strong class="text-break">{{ order.cliente.nombre }}</strong></div>
-    <div class="col-12 col-md-6"><div class="small text-muted">Tel?fono</div><span>{{ order.cliente.telefono|default:"Sin registrar" }}</span></div>
+    <div class="col-12 col-md-6"><div class="small text-muted">Teléfono</div><span>{{ order.cliente.telefono|default:"Sin registrar" }}</span></div>
     <div class="col-12 col-md-6"><div class="small text-muted">Ciudad</div><span class="text-break">{{ order.cliente.ciudad|default:"Sin registrar" }}</span></div>
-    <div class="col-12 col-md-6"><div class="small text-muted">Direcci?n</div><span class="text-break">{{ order.cliente.direccion|default:"Sin registrar" }}</span></div>
+    <div class="col-12 col-md-6"><div class="small text-muted">Dirección</div><span class="text-break">{{ order.cliente.direccion|default:"Sin registrar" }}</span></div>
     {% if order.cliente.observaciones %}<div class="col-12"><div class="small text-muted">Observaciones del cliente</div><div class="text-break">{{ order.cliente.observaciones|linebreaksbr }}</div></div>{% endif %}
   </div>
 </section>
@@ -41,3 +41,12 @@
   </dl></div>
 </div>
 <div class="d-flex justify-content-end mt-3"><a class="btn btn-outline-dark btn-sm" href="{% url 'order_receipt' order.pk %}"><i class="bi bi-download"></i> Descargar PDF</a></div>
+
+<section class="mt-4">
+  <h5>Historial de pagos · {{ payment_status }}</h5>
+  <a class="btn btn-gold btn-sm mb-2" href="{% url 'record_create' 'abonos' %}?orden={{ order.pk }}">Registrar pago</a>
+  <div class="table-responsive"><table class="table"><thead><tr><th>Fecha</th><th>Valor</th><th>Método</th><th>Referencia</th><th>Observaciones</th></tr></thead><tbody>
+  {% for payment in payments %}<tr><td>{{ payment.fecha|date:"d/m/Y H:i" }}</td><td>{{ payment.valor|money_cop }}</td><td>{{ payment.metodo_pago|default:"—" }}</td><td>{{ payment.referencia|default:"—" }}</td><td>{{ payment.observaciones|default:"—" }}</td></tr>{% empty %}<tr><td colspan="5">Sin pagos registrados.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p>Ganancia {% if order.costos_completos %}con costos confirmados{% else %}provisional: faltan confirmar los costos{% endif %}.</p>
+</section>

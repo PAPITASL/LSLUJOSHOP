@@ -6,7 +6,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, IntegrityError, connection, transaction
-from django.db.models import Count, DecimalField, F, Max, Min, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models import Count, DecimalField, Exists, F, Max, Min, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Greatest, NullIf, TruncDay, TruncMonth, TruncWeek
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import FileResponse, JsonResponse
@@ -19,8 +19,9 @@ from .models import (
     Abonos, Clientes, Comisiones, DetalleOrden, MovimientosDinero,
     Ordenes, Productos, Recibos, Vendedores,
 )
+from .payment_status import with_payments, is_paid, payment_label, delivery_label
 from .services import obtener_trm_oficial
-from .inventory import inventory_products, summarize_inventory
+from .inventory import inventory_products, summarize_inventory, validate_inventory_selection
 from .report_periods import ReportMonth, period_query
 from .report_insights import build_monthly_insights
 from .report_priorities import build_next_month_priorities
@@ -29,12 +30,20 @@ from .report_pdf import build_module_report, build_full_report
 from .excel_import import IMPORT_CONFIG, build_template, import_excel
 
 
+# Remove this period after the requested historical edits are complete.
+TEMPORARILY_EDITABLE_ORDER_PERIODS = {"2026-10"}
+
+
 @login_required
 def order_preview(request, pk):
     order = get_object_or_404(Ordenes.objects.select_related("cliente", "vendedor"), pk=pk)
-    return render(request, "gestion/order_preview.html", {
+    order.total_abonado = Abonos.objects.filter(orden=order).aggregate(total=Sum("valor"))["total"] or Decimal("0")
+    order.saldo_pendiente = max(Decimal("0"), order.total_venta - order.total_abonado)
+    return render(request, "gestion/order_history.html" if request.GET.get("historial") else "gestion/order_preview.html", {
         "order": order,
         "details": DetalleOrden.objects.filter(orden=order).order_by("pk"),
+        "payments": Abonos.objects.filter(orden=order).order_by("fecha", "pk"),
+        "payment_status": payment_label(order, Abonos.objects.filter(orden=order).aggregate(total=Sum("valor"))["total"] or Decimal("0")),
     })
 
 
@@ -42,14 +51,41 @@ def order_preview(request, pk):
 def bog_list(request):
     """Directorio global de referencias BOG asociadas a productos y órdenes."""
     query = request.GET.get("q", "").strip()
+    money_field = DecimalField(max_digits=16, decimal_places=2)
+    order_paid_subquery = (
+        Abonos.objects.filter(orden_id=OuterRef("orden_id"))
+        .order_by()
+        .values("orden_id")
+        .annotate(total=Sum("valor"))
+        .values("total")
+    )
     details = (
         DetalleOrden.objects
         .exclude(referencia_bog="")
-        .exclude(Q(flete_unitario_dolares__gt=0) | Q(flete_unitario_pesos__gt=0))
+        .annotate(order_paid=Coalesce(
+            Subquery(order_paid_subquery, output_field=money_field),
+            Value(Decimal("0")),
+            output_field=money_field,
+        ))
         .select_related("orden", "orden__cliente")
         .order_by("-orden__fecha", "-pk")
     )
-    total_bogs = details.count()
+    freight_paid = Q(flete_unitario_dolares__gt=0) | Q(flete_unitario_pesos__gt=0)
+    counts = details.aggregate(
+        total=Count("pk"),
+        freight_paid=Count("pk", filter=freight_paid),
+        freight_due=Count("pk", filter=~freight_paid),
+        paid_order_references=Count(
+            "orden_id",
+            filter=Q(orden__total_venta__gt=0, order_paid__gte=F("orden__total_venta")),
+            distinct=True,
+        ),
+        due_order_references=Count(
+            "orden_id",
+            filter=Q(order_paid__lt=F("orden__total_venta")),
+            distinct=True,
+        ),
+    )
     if query:
         details = details.filter(
             Q(referencia_bog__icontains=query)
@@ -61,14 +97,18 @@ def bog_list(request):
     return render(request, "gestion/bog_list.html", {
         "details": details,
         "query": query,
-        "total_bogs": total_bogs,
+        "total_bogs": counts["total"],
+        "paid_bogs": counts["freight_paid"],
+        "due_bogs": counts["freight_due"],
+        "paid_orders": counts["paid_order_references"],
+        "due_orders": counts["due_order_references"],
         "results_count": len(details),
     })
 
 
 MODULES = {
-    "productos": {"model": Productos, "title": "Productos", "icon": "box-seam", "search": ("nombre", "categoria", "marca", "modelo", "estado"), "columns": (("nombre", "Producto"), ("categoria", "Categoría"), ("marca", "Marca"), ("modelo", "Modelo"), ("cantidad_disponible", "Existencias"), ("precio_venta_sugerido", "Precio"), ("estado", "Estado"))},
-    "clientes": {"model": Clientes, "title": "Clientes", "icon": "people", "search": ("nombre", "telefono", "ciudad"), "columns": (("nombre", "Nombre"), ("telefono", "Teléfono"), ("ciudad", "Ciudad"), ("direccion", "Dirección"))},
+    "productos": {"model": Productos, "title": "Productos", "icon": "box-seam", "search": ("nombre", "categoria", "marca", "modelo", "estado"), "columns": (("id", "Referencia"), ("nombre", "Producto"), ("categoria", "Categoría"), ("marca", "Marca"), ("modelo", "Modelo"), ("cantidad_disponible", "Existencias físicas"), ("precio_venta_sugerido", "Precio"), ("estado", "Estado"))},
+    "clientes": {"model": Clientes, "title": "Clientes", "icon": "people", "search": ("nombre", "telefono", "correo", "ciudad"), "columns": (("nombre", "Nombre"), ("telefono", "Teléfono"), ("correo", "Correo"), ("ciudad", "Ciudad"), ("direccion", "Dirección"))},
     "vendedores": {"model": Vendedores, "title": "Vendedores", "icon": "person-badge", "search": ("nombre", "telefono"), "columns": (("nombre", "Nombre"), ("telefono", "Teléfono"), ("porcentaje_comision", "Comisión %"), ("activo", "Activo"))},
     "ordenes": {"model": Ordenes, "title": "Órdenes", "icon": "receipt", "search": ("numero_orden", "cliente__nombre", "estado"), "columns": (("numero_orden", "Número"), ("fecha", "Fecha"), ("cliente", "Cliente"), ("total_venta", "Total"), ("saldo_pendiente", "Saldo"), ("estado", "Estado"))},
     "detalles": {"model": DetalleOrden, "title": "Detalle de órdenes", "icon": "list-check", "search": ("orden__numero_orden", "descripcion_producto"), "columns": (("orden", "Orden"), ("descripcion_producto", "Producto"), ("cantidad", "Cantidad"), ("cantidad_recibida", "Recibida"), ("total_venta", "Venta"), ("ganancia_producto", "Ganancia"))},
@@ -121,6 +161,11 @@ def _dashboard_donut(rows, label_key, value_key, demo):
 
 
 def _apply_module_filters(records, request, module, config):
+    if module == "ordenes":
+        records = with_payments(records).exclude(
+            Q(total_venta__gt=0, received__gte=F("total_venta"))
+            & ~Q(estado__iexact="Cancelada") & ~Q(estado__iexact="Cotización")
+        )
     query = request.GET.get("q", "").strip()
     if query:
         search_filter = Q()
@@ -214,7 +259,7 @@ def _sync_order_commission(order):
     # utilidad de la orden.
     base = max(order.total_venta or Decimal("0"), Decimal("0"))
     value = base * percentage / Decimal("100")
-    state = "PENDIENTE POR PAGAR" if (order.saldo_pendiente or 0) <= 0 else "EN ESPERA"
+    state = "PENDIENTE POR PAGAR" if is_paid(order, order.total_abonado) else "EN ESPERA"
     if existing:
         existing.vendedor = order.vendedor
         existing.porcentaje = percentage
@@ -379,18 +424,31 @@ def reports_dashboard(request):
     orders = Ordenes.objects.select_related("cliente", "vendedor").exclude(estado__iexact="Cancelada")
     if periods:
         orders = orders.filter(_period_query("fecha", periods))
+    money_field = DecimalField(max_digits=16, decimal_places=2)
+    paid_at_close = Abonos.objects.filter(orden_id=OuterRef("pk"))
     if monthly:
-        money_field = DecimalField(max_digits=16, decimal_places=2)
-        paid_at_close = Abonos.objects.filter(orden_id=OuterRef("pk"), fecha__lt=monthly.end).order_by().values("orden_id").annotate(total=Sum("valor")).values("total")
-        orders = orders.annotate(
-            report_paid=Coalesce(Subquery(paid_at_close, output_field=money_field), Value(zero), output_field=money_field),
-        ).annotate(report_pending=Greatest(Value(zero), F("total_venta") - F("report_paid"), output_field=money_field))
+        paid_at_close = paid_at_close.filter(fecha__lt=monthly.end)
+    paid_at_close = paid_at_close.order_by().values("orden_id").annotate(total=Sum("valor")).values("total")
+    orders = orders.annotate(
+        report_paid=Coalesce(
+            Subquery(paid_at_close, output_field=money_field),
+            Value(zero),
+            output_field=money_field,
+        ),
+    ).annotate(report_pending=Greatest(
+        Value(zero), F("total_venta") - F("report_paid"), output_field=money_field
+    ))
     order_ids = orders.values_list("pk", flat=True)
     details = DetalleOrden.objects.filter(orden_id__in=order_ids).select_related("producto")
 
+    paid_condition = (
+        Q(total_venta__gt=0) & Q(report_paid__gte=F("total_venta")) & ~Q(estado__iexact="Cotización")
+    )
     totals = orders.aggregate(
         sales=Sum("total_venta"), gross=Sum("ganancia_bruta"), profit=Sum("ganancia_neta"),
-        costs=Sum("costo_total_pesos"), pending=Sum("report_pending" if monthly else "saldo_pendiente"), paid=Sum("report_paid" if monthly else "total_abonado"),
+        costs=Sum("costo_total_pesos"), pending=Sum("report_pending"), paid=Sum("report_paid"),
+        paid_orders=Count("pk", filter=paid_condition),
+        pending_orders=Count("pk", filter=~paid_condition),
         commissions=Sum("comision_vendedor"), discounts=Sum("descuento"),
     )
     sales, profit = totals["sales"] or zero, totals["profit"] or zero
@@ -474,16 +532,58 @@ def reports_dashboard(request):
         clients=Count("cliente_id", distinct=True), sales=Sum("total_venta")
     ).order_by("-sales"), "sales", 6)
 
-    colors = ("#e6313a", "#202221", "#f0a51a", "#438a68", "#4263c7", "#85888a")
-    status_rows = list(orders.values("estado").annotate(value=Count("id")).order_by("-value"))
+    status_colors = {
+        "Entregada": "#438a68",
+        "Entrega parcial": "#f0a51a",
+        "Pendiente de entrega": "#e6313a",
+        "Cotización": "#85888a",
+        "Sin productos": "#4263c7",
+    }
+    delivery_totals = {
+        row["orden_id"]: (row["total_units"] or 0, row["delivered_units"] or 0)
+        for row in details.values("orden_id").annotate(
+            total_units=Sum("cantidad"), delivered_units=Sum("cantidad_entregada"),
+        )
+    }
+    status_counts = {}
+    for order_id, order_state in orders.values_list("pk", "estado"):
+        if (order_state or "").strip().casefold() == "cotización":
+            label = "Cotización"
+        elif order_id not in delivery_totals:
+            label = "Sin productos"
+        else:
+            total_units, delivered_units = delivery_totals[order_id]
+            if total_units > 0 and delivered_units >= total_units:
+                label = "Entregada"
+            elif delivered_units > 0:
+                label = "Entrega parcial"
+            else:
+                label = "Pendiente de entrega"
+        status_counts[label] = status_counts.get(label, 0) + 1
+    status_rows = [
+        {"estado": label, "value": value}
+        for label, value in sorted(status_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
     status_total = sum(row["value"] for row in status_rows) or 1
     status_chart, gradient, offset = [], [], 0
     for index, row in enumerate(status_rows):
         percent = round(row["value"] / status_total * 100, 1)
-        color = colors[index % len(colors)]
+        color = status_colors.get(row["estado"], "#85888a")
         status_chart.append({**row, "label": row["estado"] or "Sin estado", "percent": percent, "color": color})
         gradient.append(f"{color} {offset}% {offset + percent}%")
         offset += percent
+    payment_rows = [
+        {"label": "Pagadas", "value": totals["paid_orders"] or 0, "color": "#438a68"},
+        {"label": "Por pagar", "value": totals["pending_orders"] or 0, "color": "#f0a51a"},
+    ]
+    payment_total = sum(row["value"] for row in payment_rows) or 1
+    payment_gradient, payment_offset = [], 0
+    for row in payment_rows:
+        row["percent"] = round(row["value"] / payment_total * 100, 1)
+        payment_gradient.append(
+            f"{row['color']} {payment_offset}% {payment_offset + row['percent']}%"
+        )
+        payment_offset += row["percent"]
 
     movements = MovimientosDinero.objects.all()
     payments = Abonos.objects.all()
@@ -526,7 +626,8 @@ def reports_dashboard(request):
         "total_sales": sales, "total_profit": profit, "gross_profit": totals["gross"] or zero,
         "total_costs": totals["costs"] or zero, "discounts": totals["discounts"] or zero,
         "commissions": totals["commissions"] or zero, "pending_balance": totals["pending"] or zero,
-        "total_paid": totals["paid"] or zero, "orders_count": order_count, "products_sold": units,
+        "total_paid": totals["paid"] or zero, "paid_orders_count": totals["paid_orders"],
+        "pending_orders_count": totals["pending_orders"], "orders_count": order_count, "products_sold": units,
         "ticket_average": ticket, "margin": margin, "active_clients": active_clients, "new_clients": new_clients,
         "sales_variation": variation(sales, previous_sales), "profit_variation": variation(profit, previous_profit),
         "orders_variation": variation(order_count, previous_count), "has_comparison": bool(periods),
@@ -534,6 +635,8 @@ def reports_dashboard(request):
         "top_products": top_products, "profitable_products": profitable_products,
         "brands": brands, "vehicles": vehicles, "sellers_chart": sellers, "cities": cities,
         "status_chart": status_chart, "status_gradient": ", ".join(gradient), "status_total": status_total if status_rows else 0,
+        "payment_chart": payment_rows, "payment_gradient": ", ".join(payment_gradient),
+        "payment_total": order_count,
         "income": income, "expenses": expenses, "cash_balance": income - expenses,
         "income_width": round(float(income) / cash_max * 100, 1), "expense_width": round(float(expenses) / cash_max * 100, 1),
         "inventory_units": inventory_units, "inventory_value": inventory_value,
@@ -565,16 +668,18 @@ def reports_dashboard(request):
         context["previous_recurring_clients"] = previous_orders.exclude(estado__iexact="Cotización").filter(
             cliente_id__in=prior_buyers.filter(fecha__lt=monthly.previous.start).values("cliente_id")
         ).values("cliente_id").distinct().count()
+    context["temporal_note"] += " Las ganancias pueden ser provisionales si faltan costos por confirmar; pago y entrega son independientes."
     context["next_month_priorities"] = build_next_month_priorities(context)
     if exporting:
-        report_orders = orders.order_by("fecha", "pk")
+        report_orders = list(orders.order_by("fecha", "pk"))
         if monthly:
             from .monthly_finance import build_monthly_finance
             context["monthly_finance"] = build_monthly_finance(monthly, as_of=generated_at)
-            report_orders = list(report_orders)
-            for order in report_orders:
-                order.total_abonado = order.report_paid
-                order.saldo_pendiente = order.report_pending
+        for order in report_orders:
+            order.total_abonado = order.report_paid
+            order.saldo_pendiente = order.report_pending
+            order.payment_status = payment_label(order, order.report_paid)
+            order.display_status = f"{delivery_label(order, order.detalleorden_set.all())} · {order.payment_status}"
         pdf = build_full_report(context, report_orders)
         return FileResponse(pdf, as_attachment=True,
                             filename=f"cierre-mensual-{monthly.year:04d}-{monthly.month:02d}.pdf" if monthly else f"reporte-completo-{generated_at.date().isoformat()}.pdf",
@@ -936,6 +1041,8 @@ def record_list(request, module):
 
     records = (inventory_products() if module == "productos" else config["model"].objects.all()).order_by("-pk")
     records, query = _apply_module_filters(records, request, module, config)
+    if module == "abonos" and request.GET.get("orden", "").isdigit():
+        records = records.filter(orden_id=request.GET["orden"])
 
     controls = []
     for field_name, label, filter_type in MODULE_FILTERS.get(module, ()):
@@ -982,7 +1089,23 @@ def record_list(request, module):
             queryset=DetalleOrden.objects.select_related("orden", "orden__cliente").order_by("-orden__fecha", "pk"),
             to_attr="inventory_details",
         ))
-    records = list(records[:200])
+    if module == "ordenes":
+        money_field = DecimalField(max_digits=16, decimal_places=2)
+        receipts = (
+            Abonos.objects.filter(orden_id=OuterRef("pk"))
+            .order_by()
+            .values("orden_id")
+            .annotate(total=Sum("valor"))
+            .values("total")
+        )
+        records = records.annotate(
+            actual_total_paid=Coalesce(
+                Subquery(receipts, output_field=money_field),
+                Value(Decimal("0")),
+                output_field=money_field,
+            )
+        )
+    records = list(records if module == "productos" else records[:200])
     if module == "productos":
         for product in records:
             summarize_inventory(product, product.inventory_details)
@@ -990,7 +1113,16 @@ def record_list(request, module):
     if module == "ordenes":
         for order in records:
             order_date = timezone.localtime(order.fecha) if timezone.is_aware(order.fecha) else order.fecha
-            order.can_manage_order = order_date.strftime("%Y-%m") == current_period
+            order_period = order_date.strftime("%Y-%m")
+            actual_balance = max(Decimal("0"), order.total_venta - order.actual_total_paid)
+            order.total_abonado = order.actual_total_paid
+            order.saldo_pendiente = actual_balance
+            order.payment_status = payment_label(order, order.actual_total_paid)
+            order.display_status = f"{delivery_label(order, order.detalleorden_set.all())} · {order.payment_status}"
+            order.can_manage_order = order_period == current_period
+            order.can_edit_order = (
+                order.can_manage_order or order_period in TEMPORARILY_EDITABLE_ORDER_PERIODS
+            )
             order.can_cancel_order = (
                 order.estado.lower() != "cancelada"
                 or DetalleOrden.objects.filter(orden=order, cantidad_entregada__gt=0).exists()
@@ -1009,12 +1141,37 @@ def record_form(request, module, pk=None):
     instance = get_object_or_404(config["model"], pk=pk) if pk else None
     if module == "ordenes":
         return _order_form(request, config, instance)
-    form = FORM_CLASSES[module](request.POST or None, instance=instance)
+    original_order_id = instance.orden_id if instance and module == "abonos" else None
+    initial = {} if instance else {"orden": request.GET.get("orden"), "fecha": timezone.localtime().strftime("%Y-%m-%dT%H:%M")}
+    form = FORM_CLASSES[module](request.POST or None, instance=instance, initial=initial)
     if request.method == "POST" and form.is_valid():
         try:
-            saved = form.save()
-            if module == "abonos":
-                _refresh_order_balance(saved.orden)
+            if module == "movimientos" and instance and (instance.referencia or "").startswith("AUTO-"):
+                raise ValidationError("Este movimiento se genera desde su orden o abono. Corrígelo en el registro de origen.")
+            with transaction.atomic():
+                if module == "abonos":
+                    payment_order = Ordenes.objects.select_for_update().get(pk=form.cleaned_data["orden"].pk)
+                    if instance and original_order_id != payment_order.pk:
+                        raise ValidationError("No se puede cambiar la orden de un pago registrado.")
+                    received = Abonos.objects.filter(orden=payment_order).exclude(pk=instance.pk if instance else None).aggregate(total=Sum("valor"))["total"] or Decimal("0")
+                    if payment_order.estado.casefold() in ("cancelada", "cotización") or form.cleaned_data["valor"] <= 0:
+                        raise ValidationError("Registra un pago positivo para una orden activa.")
+                    if form.cleaned_data["valor"] > payment_order.total_venta - received:
+                        raise ValidationError("El pago supera el saldo pendiente de la orden.")
+                saved = form.save()
+                if module == "abonos":
+                    _refresh_order_balance(payment_order)
+                if module == "movimientos" and saved.orden_id and saved.tipo_movimiento == "ENTRADA":
+                    locked = Ordenes.objects.select_for_update().get(pk=saved.orden_id)
+                    if saved.valor_pesos <= 0 or locked.estado.casefold() in ("cancelada", "cotización"):
+                        raise ValidationError("Selecciona una orden activa y un pago mayor a cero.")
+                    received = Abonos.objects.filter(orden=locked).aggregate(total=Sum("valor"))["total"] or Decimal("0")
+                    if saved.valor_pesos > locked.total_venta - received:
+                        raise ValidationError("El pago supera el saldo pendiente de la orden.")
+                    payment = Abonos.objects.create(orden=locked, fecha=saved.fecha, valor=saved.valor_pesos,
+                        metodo_pago=saved.metodo_pago, observaciones=saved.descripcion)
+                    saved.delete()
+                    _refresh_order_balance(locked)
             messages.success(request, f'Registro {"actualizado" if instance else "creado"} correctamente.')
             return redirect("record_list", module=module)
         except ValidationError as error:
@@ -1030,8 +1187,16 @@ def _order_form(request, config, instance):
     order_date = None
     if instance:
         order_date = timezone.localtime(instance.fecha) if timezone.is_aware(instance.fecha) else instance.fecha
+    order_period = order_date.strftime("%Y-%m") if order_date else None
     historical_cost_only = bool(
-        order_date and order_date.strftime("%Y-%m") != timezone.localdate().strftime("%Y-%m")
+        order_date
+        and order_period != timezone.localdate().strftime("%Y-%m")
+        and order_period not in TEMPORARILY_EDITABLE_ORDER_PERIODS
+    )
+    temporarily_editable_historical = bool(
+        order_date
+        and order_period in TEMPORARILY_EDITABLE_ORDER_PERIODS
+        and order_period != timezone.localdate().strftime("%Y-%m")
     )
     form_kwargs = {"historical_cost_only": historical_cost_only}
     form = FORM_CLASSES["ordenes"](request.POST or None, instance=instance, **form_kwargs)
@@ -1090,6 +1255,7 @@ def _order_form(request, config, instance):
                     product.pk: product
                     for product in Productos.objects.select_for_update().filter(pk__in=selected_product_ids)
                 }
+                validate_inventory_selection(order, formset.cleaned_data, previous_details, locked_products)
                 if creating:
                     order.numero_orden = _next_order_number()
                     for field in (
@@ -1178,9 +1344,10 @@ def _order_form(request, config, instance):
             messages.success(
                 request,
                 "Costos y fletes históricos actualizados correctamente." if historical_cost_only
+                else "Orden de octubre de 2026 actualizada correctamente." if temporarily_editable_historical
                 else f'Orden {"creada" if creating else "actualizada"} correctamente con todos sus cálculos.',
             )
-            if historical_cost_only:
+            if historical_cost_only or temporarily_editable_historical:
                 return redirect(f"{reverse('record_list', args=['ordenes'])}?periodo={order_date:%Y-%m}")
             return redirect("record_list", module="ordenes")
         except ValidationError as error:
@@ -1201,6 +1368,7 @@ def _order_form(request, config, instance):
         "module": "ordenes", "config": config, "form": form, "formset": formset,
         "editing": not creating, "numero_orden": instance.numero_orden if instance else _next_order_number(),
         "historical_cost_only": historical_cost_only,
+        "temporarily_editable_historical": temporarily_editable_historical,
         "product_data": product_data,
         "product_categories": PRODUCT_CATEGORIES,
     })
@@ -1213,6 +1381,9 @@ def record_delete(request, module, pk):
         messages.warning(request, "Los clientes forman parte del historial comercial y no se pueden eliminar.")
         return redirect("record_list", module="clientes")
     record = get_object_or_404(config["model"], pk=pk)
+    if module == "movimientos" and (record.referencia or "").startswith("AUTO-"):
+        messages.error(request, "Este movimiento es automático; corrige el abono o costo de origen.")
+        return redirect("record_list", module=module)
     if module == "ordenes":
         order_date = timezone.localtime(record.fecha) if timezone.is_aware(record.fecha) else record.fecha
         if order_date.strftime("%Y-%m") != timezone.localdate().strftime("%Y-%m"):
@@ -1220,7 +1391,13 @@ def record_delete(request, module, pk):
             return redirect(f"{reverse('record_list', args=['ordenes'])}?periodo={order_date:%Y-%m}")
     if request.method == "POST":
         try:
-            record.delete()
+            with transaction.atomic():
+                order = record.orden if module == "abonos" else None
+                if order:
+                    MovimientosDinero.objects.filter(referencia=f"AUTO-ABONO-{record.pk}").delete()
+                record.delete()
+                if order:
+                    _refresh_order_balance(order)
             messages.success(request, "Registro eliminado correctamente.")
             return redirect("record_list", module=module)
         except IntegrityError:
@@ -1292,6 +1469,49 @@ def order_receipt(request, pk):
         filename=_order_receipt_filename(order.cliente.nombre),
         content_type="application/pdf",
     )
+
+
+@login_required
+def pending_costs(request):
+    """Lista productos de órdenes cuyo costo todavía no se ha registrado."""
+    search = request.GET.get("q", "").strip()
+    period = _valid_month_period(request.GET.get("periodo"))
+    if not period:
+        period = timezone.localdate().strftime("%Y-%m")
+    year, month = (int(part) for part in period.split("-"))
+    missing_cost = (
+        (Q(costo_unitario_dolares__isnull=True) | Q(costo_unitario_dolares=0))
+        & (Q(costo_unitario_pesos__isnull=True) | Q(costo_unitario_pesos=0))
+    )
+    details = (
+        DetalleOrden.objects.select_related("orden", "orden__cliente")
+        .filter(missing_cost)
+        .filter(orden__fecha__year=year, orden__fecha__month=month)
+        .exclude(orden__estado__iexact="cancelada")
+        .order_by("orden__fecha", "orden_id", "pk")
+    )
+    if search:
+        details = details.filter(
+            Q(orden__numero_orden__icontains=search)
+            | Q(orden__cliente__nombre__icontains=search)
+            | Q(orden__cliente__telefono__icontains=search)
+            | Q(descripcion_producto__icontains=search)
+        )
+
+    orders = {}
+    for detail in details:
+        group = orders.setdefault(
+            detail.orden_id, {"order": detail.orden, "details": []},
+        )
+        group["details"].append(detail)
+
+    return render(request, "gestion/pending_costs.html", {
+        "order_groups": list(orders.values()),
+        "orders_count": len(orders),
+        "items_count": sum(len(group["details"]) for group in orders.values()),
+        "search": search,
+        "periodo": period,
+    })
 
 
 @login_required
@@ -1397,6 +1617,10 @@ def order_delivery(request, pk):
                             product.save(update_fields=["cantidad_disponible", "estado"])
                         detail.cantidad_entregada = 0
                         detail.save(update_fields=["cantidad_entregada"])
+                # Restore every correction before applying deliveries, regardless
+                # of the line order in the form.
+                for detail in locked_details:
+                    if detail.pk in reset_deliveries:
                         continue
                     quantity = requested.get(detail.pk, 0)
                     if not quantity:
@@ -1409,7 +1633,7 @@ def order_delivery(request, pk):
                     if detail.producto_id:
                         product = products[detail.producto_id]
                         if quantity > product.cantidad_disponible:
-                            raise ValidationError(f"Stock insuficiente de {product.nombre}: hay {product.cantidad_disponible} unidades.")
+                            raise ValidationError(f"Stock insuficiente del producto #{product.pk} ({product.nombre}): intentas entregar {quantity}, pero quedan {product.cantidad_disponible} unidades físicas en esta referencia. Las referencias con el mismo nombre tienen inventarios separados.")
                         product.cantidad_disponible -= quantity
                         product.estado = "Vendido" if product.cantidad_disponible == 0 else "Disponible"
                         product.save(update_fields=["cantidad_disponible", "estado"])
@@ -1454,6 +1678,12 @@ def order_delivery(request, pk):
         order.refresh_from_db()
         details = list(DetalleOrden.objects.filter(orden=order).select_related("producto").order_by("pk"))
 
+    remaining_stock = {}
+    for detail in details:
+        physical = max(0, detail.producto.cantidad_disponible) if detail.producto else 0
+        available = remaining_stock.setdefault(detail.producto_id, physical)
+        detail.ready_quantity = min(max(0, detail.cantidad-detail.cantidad_entregada), available)
+        remaining_stock[detail.producto_id] -= detail.ready_quantity
     return render(request, "gestion/order_delivery.html", {
         "order": order,
         "details": details,
@@ -1517,6 +1747,11 @@ def module_report(request, module):
     config = _module_or_404(module)
     records = (inventory_products() if module == "productos" else config["model"].objects.all()).order_by("-pk")
     records, _ = _apply_module_filters(records, request, module, config)
+    if module == "ordenes":
+        records = list(records.prefetch_related("detalleorden_set"))
+        for order in records:
+            order.total_abonado, order.saldo_pendiente = order.received, order.balance
+            order.display_status = f"{delivery_label(order, order.detalleorden_set.all())} · {payment_label(order, order.received)}"
     pdf = build_module_report(module, config, records, request.GET)
     period = request.GET.get("periodo") or "completo"
     return FileResponse(pdf, as_attachment=True, filename=f"reporte-{module}-{period}.pdf", content_type="application/pdf")

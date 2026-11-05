@@ -3,7 +3,7 @@ from django.utils import timezone
 from unittest.mock import patch
 
 from .views import (
-    _next_order_number, _order_receipt_filename, _upsert_expense_movement,
+    _next_order_number, _order_receipt_filename, _upsert_expense_movement, bog_list,
     _valid_month_period, record_list,
 )
 from .forms import DetalleOrdenForm, MovimientoForm, OrdenForm
@@ -50,6 +50,36 @@ class OrderMonthlyPeriodTests(SimpleTestCase):
         self.assertEqual(response.url, f"/gestion/movimientos/?periodo={expected_month}")
 
 
+class BogDirectoryTests(SimpleTestCase):
+    def test_directory_keeps_bogs_and_counts_payment_by_registered_freight(self):
+        request = RequestFactory().get("/bog/")
+        request.user = type("AuthenticatedUser", (), {"is_authenticated": True})()
+
+        with patch("gestion.views.DetalleOrden.objects") as details_manager, patch("gestion.views.render") as render:
+            queryset = (
+                details_manager.exclude.return_value.annotate.return_value
+                .select_related.return_value.order_by.return_value
+            )
+            queryset.aggregate.return_value = {
+                "total": 4, "freight_paid": 2, "freight_due": 2,
+                "paid_order_references": 3, "due_order_references": 1,
+            }
+            queryset.__getitem__.return_value = []
+
+            bog_list(request)
+
+        details_manager.exclude.assert_called_once_with(referencia_bog="")
+        aggregate_kwargs = queryset.aggregate.call_args.kwargs
+        self.assertIn("flete_unitario_dolares__gt", str(aggregate_kwargs["freight_paid"].filter))
+        self.assertIn("flete_unitario_pesos__gt", str(aggregate_kwargs["freight_paid"].filter))
+        self.assertIn("order_paid", str(aggregate_kwargs["paid_order_references"].filter))
+        context = render.call_args[0][2]
+        self.assertEqual(context["paid_bogs"], 2)
+        self.assertEqual(context["due_bogs"], 2)
+        self.assertEqual(context["paid_orders"], 3)
+        self.assertEqual(context["due_orders"], 1)
+
+
 class OrderNumberTests(SimpleTestCase):
     @patch("gestion.views.Ordenes.objects.values_list", return_value=[])
     def test_first_order_starts_at_275(self, _values_list):
@@ -88,7 +118,7 @@ class HistoricalOrderCostFormTests(SimpleTestCase):
     def test_only_order_observations_are_editable(self):
         form = OrdenForm(historical_cost_only=True)
         editable = {name for name, field in form.fields.items() if not field.disabled}
-        self.assertEqual(editable, {"observaciones"})
+        self.assertEqual(editable, {"observaciones", "costos_completos"})
 
     def test_only_product_cost_fields_are_editable(self):
         form = DetalleOrdenForm(historical_cost_only=True)
@@ -121,7 +151,7 @@ class ManualMovementFormTests(SimpleTestCase):
         form = MovimientoForm()
         self.assertEqual(
             list(form.fields),
-            ["fecha", "tipo_movimiento", "descripcion", "valor_pesos"],
+            ["fecha", "tipo_movimiento", "orden", "metodo_pago", "descripcion", "valor_pesos"],
         )
 
     def test_technical_values_are_filled_automatically(self):

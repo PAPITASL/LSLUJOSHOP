@@ -5,6 +5,7 @@
 {% block content %}
 {% localize off %}
 <div class="reports-dashboard">
+  <div class="alert alert-info">Las ganancias de este reporte usan los costos registrados y pueden ser provisionales. Consulta el <a href="{% url 'financial_report' %}">reporte financiero</a> para separar el dinero recibido, los gastos y las ganancias de órdenes pagadas con costos confirmados. Pago y entrega se calculan por separado.</div>
   <section class="reports-hero">
     <div><span>{{ report_title }}</span><h2>{{ period_label }}</h2><p>{% if is_monthly %}Período: {{ period_range }} · Comparado con: {{ comparison_label }} · Generado: {{ generated_at|date:"d/m/Y H:i" }} (Bogotá){% else %}Ventas, rentabilidad, inventario, clientes y equipo comercial en una sola vista.{% endif %}</p></div>
     <div class="d-flex gap-2 flex-wrap">
@@ -22,7 +23,7 @@
     <article class="executive-kpi kpi-blue"><i class="bi bi-basket"></i><div><span>Ticket promedio</span><strong>{{ ticket_average|money_cop }}</strong><small>Promedio por orden</small></div></article>
     <article class="executive-kpi"><i class="bi bi-percent"></i><div><span>Margen neto</span><strong>{{ margin|floatformat:1 }}%</strong><small>Utilidad frente a ventas</small></div></article>
     <article class="executive-kpi"><i class="bi bi-people"></i><div><span>Clientes compradores</span><strong>{{ active_clients }}</strong><small>Clientes distintos en el período</small></div></article>
-    <article class="executive-kpi"><i class="bi bi-wallet2"></i><div><span>Cartera del período</span><strong>{{ pending_balance|money_cop }}</strong><small>{{ total_paid|money_cop }} abonados</small></div></article>
+    <article class="executive-kpi"><i class="bi bi-wallet2"></i><div><span>Cartera del período</span><strong>{{ pending_balance|money_cop }}</strong><small>{{ total_paid|money_cop }} abonados · {{ paid_orders_count }} pagadas · {{ pending_orders_count }} por pagar</small></div></article>
     <article class="executive-kpi"><i class="bi bi-box-seam"></i><div><span>Inventario actual</span><strong>{{ inventory_value|money_cop }}</strong><small>{{ inventory_units }} unidades disponibles</small></div></article>
   </section>
 
@@ -32,8 +33,13 @@
       {% if timeline %}<div class="timeline-chart report-timeline {% if timeline_granularity == 'diaria' %}report-timeline--daily{% endif %}">{% for item in timeline %}<div class="timeline-column"><div class="timeline-bars"><i class="timeline-sale" style="height:{{ item.sales_height|unlocalize }}%" title="Ventas: {{ item.sales|money_cop }}"></i><i class="timeline-profit" style="height:{{ item.profit_height|unlocalize }}%" title="Utilidad: {{ item.profit|money_cop }}"></i></div><span>{% if timeline_granularity == 'diaria' %}Día {% endif %}{{ item.label }}</span></div>{% endfor %}</div>{% else %}<div class="dash-empty"><i class="bi bi-bar-chart"></i><span>No hay ventas para el período seleccionado.</span></div>{% endif %}
     </article>
     <article class="dash-panel">
-      <header class="dash-panel-header"><div><small>DISTRIBUCIÓN</small><h2>Estado de las órdenes</h2></div></header>
-      {% if status_chart %}<div class="status-layout"><div class="status-donut-wrap"><div class="css-donut" style="background:conic-gradient({{ status_gradient }})"><div><strong>{{ status_total }}</strong><small>órdenes</small></div></div><span>Estado del período</span></div><div class="status-list">{% for item in status_chart %}<div class="status-item"><div class="status-item-heading"><span><i style="background:{{ item.color }}"></i>{{ item.label }}</span><strong>{{ item.value }} <small>{{ item.percent }}%</small></strong></div><div class="status-track"><i style="width:{{ item.percent|unlocalize }}%;background:{{ item.color }}"></i></div></div>{% endfor %}</div></div>{% else %}<div class="dash-empty"><i class="bi bi-pie-chart"></i><span>Sin órdenes en este período.</span></div>{% endif %}
+      <header class="dash-panel-header"><div><small>SEGÚN UNIDADES REGISTRADAS</small><h2>Estado de entrega</h2></div></header>
+      {% if status_chart %}<div class="status-layout"><div class="status-donut-wrap"><div class="css-donut" style="background:conic-gradient({{ status_gradient }})"><div><strong>{{ status_total }}</strong><small>órdenes</small></div></div><span>Entrega real del período</span></div><div class="status-list">{% for item in status_chart %}<div class="status-item"><div class="status-item-heading"><span><i style="background:{{ item.color }}"></i>{{ item.label }}</span><strong>{{ item.value }} <small>{{ item.percent }}%</small></strong></div><div class="status-track"><i style="width:{{ item.percent|unlocalize }}%;background:{{ item.color }}"></i></div></div>{% endfor %}</div></div>{% else %}<div class="dash-empty"><i class="bi bi-pie-chart"></i><span>Sin órdenes en este período.</span></div>{% endif %}
+    </article>
+    <article class="dash-panel">
+      <header class="dash-panel-header"><div><small>SEGÚN ABONOS / TOTAL FACTURA</small><h2>Estado de pago</h2></div></header>
+      {% if orders_count %}<div class="status-layout"><div class="status-donut-wrap"><div class="css-donut" style="background:conic-gradient({{ payment_gradient }})"><div><strong>{{ orders_count }}</strong><small>órdenes</small></div></div><span>Abonos registrados</span></div><div class="status-list">{% for item in payment_chart %}<div class="status-item"><div class="status-item-heading"><span><i style="background:{{ item.color }}"></i>{{ item.label }}</span><strong>{{ item.value }} <small>{{ item.percent }}%</small></strong></div><div class="status-track"><i style="width:{{ item.percent|unlocalize }}%;background:{{ item.color }}"></i></div></div>{% endfor %}</div></div>{% else %}<div class="dash-empty"><i class="bi bi-pie-chart"></i><span>Sin órdenes en este período.</span></div>{% endif %}
+      <small class="text-muted">Pagada cuando los abonos cubren el total de la factura; las facturas de valor cero no requieren abono. El estado de entrega no afecta este cálculo.</small>
     </article>
   </section>
 

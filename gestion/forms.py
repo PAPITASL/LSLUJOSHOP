@@ -1,8 +1,10 @@
 from datetime import timedelta
 
 from django import forms
+from django.db.models import Q
 from django.forms import inlineformset_factory
 from django.utils import timezone
+from .inventory import stock_products
 
 from .models import (
     Abonos, Clientes, Comisiones, DetalleOrden, MovimientosDinero,
@@ -56,7 +58,7 @@ class OrdenForm(BaseGestionForm):
         model = Ordenes
         fields = (
             "fecha", "cliente", "vendedor", "tasa_dolar",
-            "otros_costos_pesos", "descuento", "estado", "observaciones",
+            "otros_costos_pesos", "descuento", "estado", "costos_completos", "observaciones",
         )
         labels = {
             "tasa_dolar": "TRM del dólar",
@@ -84,7 +86,7 @@ class OrdenForm(BaseGestionForm):
             for field_name, field in self.fields.items():
                 # Las observaciones no alteran los valores contables y deben
                 # poder corregirse incluso cuando el mes ya esta cerrado.
-                field.disabled = field_name != "observaciones"
+                field.disabled = field_name not in ("observaciones", "costos_completos")
 
     def clean_estado(self):
         state = self.cleaned_data["estado"]
@@ -113,11 +115,12 @@ class ProductoChoiceField(forms.ModelChoiceField):
         details = " · ".join(value for value in (product.marca, product.modelo) if value)
         details = f" · {details}" if details else ""
         price = f"${product.precio_venta_sugerido:,.0f}".replace(",", ".")
-        return f"{product.nombre}{details} · Stock: {product.cantidad_disponible} · {price}"
+        return (f"#{product.pk} · {product.nombre}{details} · Físicas: {product.cantidad_disponible}"
+                f" · Libres: {product.stock_free} · Comprometidas: {product.stock_committed} · {price}")
 
 
 class DetalleOrdenForm(BaseGestionForm):
-    producto = ProductoChoiceField(queryset=Productos.objects.all().order_by("nombre"), label="Producto del inventario", required=False)
+    producto = ProductoChoiceField(queryset=stock_products().filter(stock_free__gt=0).order_by("nombre", "pk"), label="Producto del inventario", required=False)
 
     class Meta:
         model = DetalleOrden
@@ -144,6 +147,11 @@ class DetalleOrdenForm(BaseGestionForm):
     def __init__(self, *args, **kwargs):
         historical_cost_only = kwargs.pop("historical_cost_only", False)
         super().__init__(*args, **kwargs)
+        # Keep the original product available for historical/cost edits even
+        # after it is fully reserved or delivered. New lines only offer free stock.
+        self.fields["producto"].queryset = stock_products().filter(
+            Q(stock_free__gt=0) | Q(pk=self.instance.producto_id if self.instance.pk else None)
+        ).order_by("nombre", "pk")
         self.fields["descripcion_producto"].required = False
         if not self.is_bound and not self.instance.pk:
             self.fields["origen_producto"].initial = "INVENTARIO"
@@ -294,12 +302,20 @@ class MovimientoForm(BaseGestionForm):
 
     class Meta:
         model = MovimientosDinero
-        fields = ("fecha", "tipo_movimiento", "descripcion", "valor_pesos")
+        fields = ("fecha", "tipo_movimiento", "orden", "metodo_pago", "descripcion", "valor_pesos")
         labels = {
             "tipo_movimiento": "Tipo de movimiento",
             "descripcion": "Descripción u observaciones",
             "valor_pesos": "Valor (COP)",
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("valor_pesos") is not None and cleaned["valor_pesos"] <= 0:
+            self.add_error("valor_pesos", "El valor debe ser mayor a cero.")
+        if cleaned.get("orden") and cleaned.get("tipo_movimiento") == "SALIDA":
+            self.add_error("orden", "Registra los costos de esta orden en su formulario para incluirlos en la ganancia. Para un gasto general deja la orden vacía.")
+        return cleaned
 
     def save(self, commit=True):
         movement = super().save(commit=False)

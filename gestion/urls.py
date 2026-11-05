@@ -1,12 +1,15 @@
 from django.urls import path
-from . import views
+from . import views, finance_views
 
 urlpatterns = [
+    path("pagadas/", finance_views.paid_list, name="paid_list"),
+    path("reporte-financiero/", finance_views.financial_report, name="financial_report"),
     path("ordenes/<int:pk>/vista-previa/", views.order_preview, name="order_preview"),
     path("", views.dashboard, name="dashboard"),
     path("api/trm/", views.trm_actual, name="trm_actual"),
     path("api/productos/nuevo/", views.quick_product_create, name="quick_product_create"),
     path("reportes/", views.reports_dashboard, name="reports_dashboard"),
+    path("costos-pendientes/", views.pending_costs, name="pending_costs"),
     path("entregas-pendientes/", views.pending_deliveries, name="pending_deliveries"),
     path("bog/", views.bog_list, name="bog_list"),
     path("ordenes/<int:pk>/recibo/", views.order_receipt, name="order_receipt"),

@@ -186,7 +186,7 @@ def build_executive_report(context, orders):
         ('VENTAS',compact(context['total_sales']),context['sales_variation'],None),
         ('UTILIDAD BRUTA',compact(context['gross_profit']),None,None),
         ('DINERO RECAUDADO',compact(context['payments_total']),None,None),
-        ('PENDIENTE POR COBRAR',compact(context['pending_balance']),None,None),
+        ('PENDIENTE POR COBRAR',compact(context['pending_balance']),None,f"{context['pending_orders_count']} órdenes por pagar · {context['paid_orders_count']} pagadas"),
         ('ÓRDENES',context['orders_count'],context['orders_variation'],None),
         ('TICKET PROMEDIO',compact(context['ticket_average']),None,None),
         ('CLIENTES',context['active_clients'],None,None),
@@ -242,6 +242,8 @@ def build_executive_report(context, orders):
 
     heading('¿En qué estado están los pedidos?', 'Estados actuales de las órdenes seleccionadas. No equivalen a entregas ocurridas dentro del mes.')
     story.extend([Bars([(r['label'],r['value']) for r in context['status_chart']],width,currency=False,color=INK),Spacer(1,10)])
+    heading('¿Qué órdenes están pagadas?', 'Se considera pagada si tiene abonos registrados que cubren el total de la factura, sin importar si figura como entregada.')
+    story.extend([Bars([(r['label'],r['value']) for r in context['payment_chart']],width,currency=False,color=INK),Spacer(1,10)])
     heading('¿Cómo está el inventario hoy?',context['inventory_note'])
     cards([('VALOR ESTIMADO',compact(context['inventory_value']),None,None),('UNIDADES FÍSICAS',context['inventory_units'],None,None),('REFERENCIAS',context['inventory_products'],None,None)], show_comparison=False)
     story.extend([Bars([('Referencias con stock bajo',context['low_stock_count']),('Referencias agotadas',context['exhausted_count'])],width,currency=False,color=WARNING),Spacer(1,16)])
@@ -306,7 +308,7 @@ def build_executive_report(context, orders):
     for order in orders:
         from django.utils import timezone
         local=timezone.localtime(order.fecha) if timezone.is_aware(order.fecha) else order.fecha
-        order_rows.append((f"{order.numero_orden} · {local:%d/%m/%Y}\n{order.cliente}\n{order.estado}",money(order.total_venta),money(order.total_abonado),money(order.saldo_pendiente),money(order.ganancia_neta)))
+        order_rows.append((f"{order.numero_orden} · {local:%d/%m/%Y}\n{order.cliente}\n{order.display_status}",money(order.total_venta),money(order.total_abonado),money(order.saldo_pendiente),money(order.ganancia_neta)))
     table('Seguimiento de órdenes',['Orden / cliente / estado','Venta','Abonado','Pendiente','Resultado'],order_rows,[width*.36,width*.16,width*.16,width*.16,width*.16])
 
     if context.get('monthly_finance') is not None:

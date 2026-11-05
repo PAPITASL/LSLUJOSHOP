@@ -67,10 +67,10 @@ class Command(BaseCommand):
             changes = {}
             notes = [canonical["observaciones"]] if canonical["observaciones"] else []
             for row in duplicates:
-                for field in ("ciudad", "direccion"):
+                for field in ("correo", "ciudad", "direccion"):
                     value, current = row[field], changes.get(field, canonical[field])
                     if value and value != current:
-                        if not current or current.strip().casefold() in ("n/a", "sin registrar"):
+                        if not current or (field != "correo" and current.strip().casefold() in ("n/a", "sin registrar")):
                             changes[field] = value
                         else:
                             notes.append(f'Registro unificado {row["id"]}, {field}: {value}')

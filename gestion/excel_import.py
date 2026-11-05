@@ -34,9 +34,9 @@ IMPORT_CONFIG = {
     },
     "clientes": {
         "model": Clientes,
-        "columns": (("id", "ID (opcional)"), ("nombre", "Nombre *"), ("telefono", "Teléfono"), ("ciudad", "Ciudad"), ("direccion", "Dirección"), ("observaciones", "Observaciones")),
+        "columns": (("id", "ID (opcional)"), ("nombre", "Nombre *"), ("telefono", "Teléfono"), ("correo", "Correo"), ("ciudad", "Ciudad"), ("direccion", "Dirección"), ("observaciones", "Observaciones")),
         "required": {"nombre"}, "decimal": set(), "integer": set(), "choices": {}, "defaults": {"telefono": "Sin registrar"},
-        "example": (None, "David Calero", "321591172", "Guacarí", "Calle 3 N.º 2-154", "Cliente frecuente"),
+        "example": (None, "David Calero", "321591172", "david@example.com", "Guacarí", "Calle 3 N.º 2-154", "Cliente frecuente"),
     },
     "vendedores": {
         "model": Vendedores,

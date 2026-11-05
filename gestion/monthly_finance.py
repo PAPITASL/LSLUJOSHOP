@@ -42,7 +42,7 @@ def build_monthly_finance(period, *, as_of=None):
                             if order.finance_details else order.estado.strip().casefold() not in ("entregada", "cancelada"))
         age = max(0, (close_date - timezone.localtime(order.fecha).date()).days)
         overdue = not cancelled and age > 10 and (balance > ZERO or delivery_pending)
-        category = "cancelled" if cancelled else "paid" if balance == ZERO else "partial" if received > ZERO else "pending"
+        category = "cancelled" if cancelled else "paid" if total > ZERO and balance == ZERO else "partial" if received > ZERO else "pending"
         row = {"id": order.pk, "number": order.numero_orden, "client": order.cliente.nombre,
                "total": total, "paid": received, "balance": balance, "state": order.estado,
                "delivery_pending": delivery_pending, "age": age, "overdue": overdue,
@@ -61,7 +61,7 @@ def build_monthly_finance(period, *, as_of=None):
 
     active = [row for row in monthly if not row["cancelled"]]
     partial = [row for row in active if row["category"] == "partial"]
-    unresolved = [row for row in active if row["balance"] > ZERO or row["delivery_pending"]]
+    unresolved = [row for row in active if row["category"] != "paid" or row["delivery_pending"]]
     overdue = [row for row in tracking if row["overdue"]]
     receipt_rows = list(receipts.values("fecha", "valor", "orden__fecha", "orden__estado"))
     received = total(receipt_rows, "valor")

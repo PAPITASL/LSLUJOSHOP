@@ -27,7 +27,7 @@ BORDER = colors.HexColor("#CDCFD1")
 
 REPORT_COLUMNS = {
     "productos": (("id", "ID"), ("nombre", "Producto"), ("categoria", "Categoría"), ("marca", "Marca"), ("modelo", "Modelo"), ("cantidad_disponible", "Stock"), ("costo_pesos", "Costo COP"), ("precio_venta_sugerido", "Precio venta"), ("estado", "Estado")),
-    "clientes": (("id", "ID"), ("nombre", "Nombre"), ("telefono", "Teléfono"), ("ciudad", "Ciudad"), ("direccion", "Dirección"), ("creado_en", "Registro")),
+    "clientes": (("id", "ID"), ("nombre", "Nombre"), ("telefono", "Teléfono"), ("correo", "Correo"), ("ciudad", "Ciudad"), ("direccion", "Dirección"), ("creado_en", "Registro")),
     "vendedores": (("id", "ID"), ("nombre", "Vendedor"), ("telefono", "Teléfono"), ("porcentaje_comision", "Comisión %"), ("activo", "Activo")),
     "ordenes": (("numero_orden", "Orden"), ("fecha", "Fecha"), ("cliente", "Cliente"), ("vendedor", "Vendedor"), ("subtotal_venta", "Subtotal"), ("total_venta", "Total"), ("total_abonado", "Abonado"), ("saldo_pendiente", "Saldo"), ("ganancia_neta", "Ganancia"), ("estado", "Estado")),
     "detalles": (("orden", "Orden"), ("descripcion_producto", "Producto"), ("cantidad", "Cant."), ("cantidad_recibida", "Pedida"), ("costo_unitario_dolares", "Costo USD"), ("costo_unitario_pesos", "Costo COP"), ("flete_unitario_dolares", "Flete USD"), ("flete_unitario_pesos", "Flete COP"), ("precio_venta_unitario", "Precio venta"), ("ganancia_producto", "Ganancia")),
@@ -61,7 +61,9 @@ def _money(value):
 
 
 def _display(record, field):
-    value = getattr(record, field, None)
+    value = getattr(record, "display_status", None) if field == "estado" else None
+    if value is None:
+        value = getattr(record, field, None)
     if value is None:
         return "—"
     if field in MONEY_FIELDS:
@@ -128,7 +130,7 @@ def _analytics(module, records):
         balance = sum((item.saldo_pendiente or 0 for item in records), Decimal("0"))
         profit = sum((item.ganancia_neta or 0 for item in records), Decimal("0"))
         for item in records:
-            groups[item.estado or "Sin estado"] += item.total_venta or 0
+            groups[getattr(item, "display_status", item.estado) or "Sin estado"] += item.total_venta or 0
         details = DetalleOrden.objects.filter(orden_id__in=[item.pk for item in records]).select_related("producto")
         products, brands = defaultdict(int), defaultdict(int)
         for detail in details:

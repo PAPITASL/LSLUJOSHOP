@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from .forms import OrdenForm
 from .inventory import summarize_inventory
-from .models import Clientes, DetalleOrden, Ordenes, Productos
+from .models import Abonos, Clientes, DetalleOrden, Ordenes, Productos
 
 
 class InventoryStateTests(SimpleTestCase):
@@ -82,6 +82,74 @@ class InventoryWorkflowTests(TestCase):
             f"entregar_{self.detail.pk}": quantity, "abono": "0",
         })
 
+    def test_pending_costs_lists_only_uncosted_products_in_active_orders(self):
+        priced_detail = self.create_record(
+            DetalleOrden, orden=self.order, producto=self.product,
+            descripcion_producto="Producto con costo", cantidad=1,
+            costo_unitario_dolares=Decimal("10"),
+        )
+        cancelled_order = self.create_record(
+            Ordenes, numero_orden="TEST-2", fecha=timezone.now(),
+            cliente=self.customer, estado="Cancelada",
+        )
+        self.create_record(
+            DetalleOrden, orden=cancelled_order, producto=self.product,
+            descripcion_producto="Producto cancelado", cantidad=1,
+        )
+        previous_month_order = self.create_record(
+            Ordenes, numero_orden="TEST-3",
+            fecha=self.order.fecha.replace(year=2000, month=1),
+            cliente=self.customer, estado="Pendiente",
+        )
+        self.create_record(
+            DetalleOrden, orden=previous_month_order, producto=self.product,
+            descripcion_producto="Producto de otro mes", cantidad=1,
+        )
+
+        response = self.client.get(reverse("pending_costs"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Farola")
+        self.assertContains(response, "Registrar costos")
+        self.assertNotContains(response, priced_detail.descripcion_producto)
+        self.assertNotContains(response, "Producto cancelado")
+        self.assertNotContains(response, "Producto de otro mes")
+        self.assertEqual(response.context["orders_count"], 1)
+        self.assertEqual(response.context["items_count"], 1)
+        self.assertEqual(response.context["periodo"], timezone.localdate().strftime("%Y-%m"))
+
+        previous_month = self.client.get(
+            reverse("pending_costs"), {"periodo": "2000-01"},
+        )
+        self.assertContains(previous_month, "Producto de otro mes")
+        self.assertNotContains(previous_month, "Farola")
+
+    def test_october_orders_are_temporarily_editable_without_unlocking_other_past_months(self):
+        self.order.fecha = self.order.fecha.replace(year=2026, month=10, day=1)
+        self.order.save()
+
+        listing = self.client.get(
+            reverse("record_list", args=["ordenes"]), {"periodo": "2026-10"},
+        )
+        self.assertEqual(listing.status_code, 200)
+        listed_order = listing.context["records"][0]
+        self.assertTrue(listed_order.can_edit_order)
+        self.assertFalse(listed_order.can_manage_order)
+
+        editor = self.client.get(reverse("record_update", args=["ordenes", self.order.pk]))
+        self.assertEqual(editor.status_code, 200)
+        self.assertFalse(editor.context["historical_cost_only"])
+        self.assertTrue(editor.context["temporarily_editable_historical"])
+        self.assertFalse(editor.context["form"].fields["fecha"].disabled)
+        self.assertFalse(editor.context["formset"].forms[0].fields["cantidad"].disabled)
+        self.assertContains(editor, "Octubre de 2026 está habilitado temporalmente")
+
+        self.order.fecha = self.order.fecha.replace(month=9)
+        self.order.save()
+        locked_editor = self.client.get(reverse("record_update", args=["ordenes", self.order.pk]))
+        self.assertTrue(locked_editor.context["historical_cost_only"])
+        self.assertFalse(locked_editor.context["temporarily_editable_historical"])
+
     def test_partial_then_full_delivery_subtracts_only_delivered_units(self):
         self.assertEqual(self.deliver(2).status_code, 302)
         self.product.refresh_from_db()
@@ -96,6 +164,103 @@ class InventoryWorkflowTests(TestCase):
         self.deliver(2)
         self.product.refresh_from_db()
         self.assertEqual(self.product.cantidad_disponible, 1)
+
+    def test_last_physical_unit_can_be_delivered_even_when_committed(self):
+        self.product.cantidad_disponible = 1
+        self.product.save()
+        response = self.client.get(reverse("order_delivery", args=[self.order.pk]))
+        self.assertEqual(response.context["details"][0].ready_quantity, 1)
+        self.assertEqual(self.deliver(1).status_code, 302)
+        self.product.refresh_from_db()
+        self.detail.refresh_from_db()
+        self.assertEqual(self.product.cantidad_disponible, 0)
+        self.assertEqual(self.detail.cantidad_entregada, 1)
+
+    def test_delivery_screen_does_not_repeat_available_unit(self):
+        self.product.cantidad_disponible = 1
+        self.product.save()
+        self.create_record(DetalleOrden, orden=self.order, producto=self.product,
+                           descripcion_producto="Otra línea", cantidad=1)
+        response = self.client.get(reverse("order_delivery", args=[self.order.pk]))
+        self.assertEqual([d.ready_quantity for d in response.context["details"]], [1, 0])
+
+    def test_stock_choice_distinguishes_physical_from_free(self):
+        from .inventory import stock_products
+        from .forms import ProductoChoiceField
+        self.product.cantidad_disponible = 1
+        self.product.save()
+        product = stock_products().get(pk=self.product.pk)
+        self.assertEqual((product.cantidad_disponible, product.stock_free, product.stock_committed), (1, 0, 4))
+        label = ProductoChoiceField(queryset=stock_products()).label_from_instance(product)
+        self.assertIn(f"#{self.product.pk}", label)
+        self.assertIn("Libres: 0", label)
+
+    def test_reset_later_line_can_supply_earlier_delivery(self):
+        self.product.cantidad_disponible = 0
+        self.product.save()
+        later = self.create_record(DetalleOrden, orden=self.order, producto=self.product,
+                                  descripcion_producto="Entrega a corregir", cantidad=1, cantidad_entregada=1)
+        response = self.client.post(reverse("order_delivery", args=[self.order.pk]), {
+            f"entregar_{self.detail.pk}": "1", f"estado_entrega_{later.pk}": "no_entregado", "abono": "0",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.product.refresh_from_db()
+        self.detail.refresh_from_db()
+        later.refresh_from_db()
+        self.assertEqual((self.product.cantidad_disponible, self.detail.cantidad_entregada, later.cantidad_entregada), (0, 1, 0))
+
+    def test_new_product_choices_exclude_sold_empty_and_fully_committed(self):
+        from .forms import DetalleOrdenForm
+        sold = self.create_record(Productos, nombre="Vendido", cantidad_disponible=0, estado="Vendido")
+        empty = self.create_record(Productos, nombre="Agotado", cantidad_disponible=0, estado="Agotado")
+        self.product.cantidad_disponible = 4
+        self.product.save()
+        available = self.create_record(Productos, nombre="Libre", cantidad_disponible=1, estado="Disponible")
+        ids = set(DetalleOrdenForm().fields["producto"].queryset.values_list("pk", flat=True))
+        self.assertIn(available.pk, ids)
+        self.assertTrue(ids.isdisjoint({sold.pk, empty.pk, self.product.pk}))
+
+    def test_inventory_selection_combines_lines_and_excludes_other_orders(self):
+        from .inventory import validate_inventory_selection
+        new_order = Ordenes(estado="Pendiente")
+        line = {"producto": self.product, "origen_producto": "INVENTARIO", "cantidad": 1}
+        products = {self.product.pk: self.product}
+        validate_inventory_selection(new_order, [line], {}, products)
+        with self.assertRaisesMessage(ValidationError, "hay 1 libres"):
+            validate_inventory_selection(new_order, [line, line], {}, products)
+
+    def test_inventory_selection_preserves_current_order_commitment(self):
+        from .inventory import validate_inventory_selection
+        line = {"id": self.detail, "producto": self.product,
+                "origen_producto": "INVENTARIO", "cantidad": 5}
+        products = {self.product.pk: self.product}
+        previous = {self.detail.pk: self.detail}
+        validate_inventory_selection(self.order, [line], previous, products)
+        line["cantidad"] = 6
+        with self.assertRaises(ValidationError):
+            validate_inventory_selection(self.order, [line], previous, products)
+
+    def test_partially_committed_product_remains_selectable(self):
+        from .forms import DetalleOrdenForm
+        product = DetalleOrdenForm().fields["producto"].queryset.get(pk=self.product.pk)
+        self.assertEqual(product.stock_free, 1)
+
+    def test_existing_sold_product_remains_only_on_original_line(self):
+        from .forms import DetalleOrdenForm, DetalleOrdenFormSet
+        self.product.cantidad_disponible = 0
+        self.product.estado = "Vendido"
+        self.product.save()
+        existing = DetalleOrdenForm(instance=self.detail)
+        self.assertTrue(existing.fields["producto"].queryset.filter(pk=self.product.pk).exists())
+        new_line = DetalleOrdenFormSet(instance=self.order).empty_form
+        self.assertFalse(new_line.fields["producto"].queryset.filter(pk=self.product.pk).exists())
+
+    def test_inventory_list_includes_products_beyond_old_200_limit(self):
+        for index in range(201):
+            self.create_record(Productos, nombre=f"Disponible {index}", cantidad_disponible=1, estado="Disponible")
+        response = self.client.get(reverse("record_list", args=["productos"]))
+        self.assertEqual(len(response.context["records"]), 202)
+        self.assertIn(self.product.pk, [item.pk for item in response.context["records"]])
 
     def test_insufficient_stock_rolls_back(self):
         self.product.cantidad_disponible = 1
@@ -205,6 +370,40 @@ class InventoryWorkflowTests(TestCase):
         self.assertIn("attachment", response["Content-Disposition"])
         self.assertTrue(b"".join(response.streaming_content).startswith(b"%PDF-"))
 
+    def test_report_separates_actual_delivery_and_payment_status(self):
+        self.order.total_venta = Decimal("100")
+        self.order.estado = "Pendiente"
+        self.order.save()
+
+        delivered_order = self.create_record(
+            Ordenes, numero_orden="DELIVERED", fecha=timezone.now(),
+            cliente=self.customer, estado="Pendiente", total_venta=100,
+        )
+        self.create_record(
+            DetalleOrden, orden=delivered_order, producto=self.product,
+            descripcion_producto="Entregado", cantidad=1, cantidad_entregada=1,
+        )
+        Abonos.objects.create(orden=delivered_order, fecha=timezone.now(), valor=100)
+
+        unpaid_order = self.create_record(
+            Ordenes, numero_orden="UNPAID", fecha=timezone.now(),
+            cliente=self.customer, estado="Pagada", total_venta=50,
+        )
+        self.create_record(
+            DetalleOrden, orden=unpaid_order, producto=self.product,
+            descripcion_producto="No entregado", cantidad=2,
+        )
+
+        response = self.client.get(reverse("reports_dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        delivery_counts = {row["label"]: row["value"] for row in response.context["status_chart"]}
+        payment_counts = {row["label"]: row["value"] for row in response.context["payment_chart"]}
+        self.assertEqual(delivery_counts["Entregada"], 1)
+        self.assertEqual(delivery_counts["Pendiente de entrega"], 2)
+        self.assertEqual(payment_counts["Pagadas"], 1)
+        self.assertEqual(payment_counts["Por pagar"], 2)
+
     def test_priorities_use_history_for_recurrence_and_all_categories(self):
         from .report_periods import ReportMonth
         period = ReportMonth(2026, 10)
@@ -312,6 +511,6 @@ class InventoryWorkflowTests(TestCase):
             response = self.client.get(reverse("reports_dashboard"), {"formato": "pdf", "meses": "2026-01,2026-03"})
             context, orders = builder.call_args.args
             self.assertEqual(context["selected_periods"], ["2026-01", "2026-03"])
-            self.assertEqual(list(orders.values_list("numero_orden", flat=True)), ["TEST-1"])
+            self.assertEqual([order.numero_orden for order in orders], ["TEST-1"])
             self.assertEqual(context["orders_count"], 1)
             response.close()

@@ -14,7 +14,7 @@ from .executive_pdf import build_executive_report
 from .models import Abonos, Clientes, DetalleOrden, MovimientosDinero, Ordenes
 from .monthly_finance import build_monthly_finance
 from .report_periods import ReportMonth
-from .views import reports_dashboard
+from .views import bog_list, record_list, reports_dashboard
 
 
 def local(year, month, day, hour=12):
@@ -67,7 +67,7 @@ class MonthlyFinanceTests(TestCase):
         self.receipt(previous, 500)
         self.order(total=500, state="Cancelada")
         self.order(total=99999, state="Cotización")
-        paid = self.order(total=800, state="Pendiente")
+        paid = self.order(total=800, state="Entregada")
         self.receipt(paid, 800)
         result = self.result()
         self.assertEqual(result["registered"], 2300)
@@ -157,6 +157,146 @@ class MonthlyFinanceTests(TestCase):
         self.assertIn("monthly_finance", self.context()[0])
         self.assertNotIn("monthly_finance", self.context("")[0])
         self.assertNotIn("monthly_finance", self.context("2026-08,2026-09")[0])
+
+    def test_report_uses_actual_receipts_to_calculate_paid_orders_and_balance(self):
+        paid = self.order(total=1000, state="Entregada")
+        self.receipt(paid, 1000)
+        partial = self.order(total=1000)
+        self.receipt(partial, 400)
+        Ordenes.objects.filter(pk=paid.pk).update(total_abonado=0, saldo_pendiente=1000)
+        Ordenes.objects.filter(pk=partial.pk).update(total_abonado=1000, saldo_pendiente=0)
+
+        context, orders = self.context("")
+
+        self.assertEqual(context["total_paid"], 1400)
+        self.assertEqual(context["pending_balance"], 600)
+        self.assertEqual(context["paid_orders_count"], 1)
+        self.assertEqual(context["pending_orders_count"], 1)
+        self.assertEqual(context["payment_chart"][0]["label"], "Pagadas")
+        paid_report_order = next(order for order in orders if order.pk == paid.pk)
+        self.assertEqual(paid_report_order.estado, "Entregada")
+        self.assertEqual(paid_report_order.payment_status, "Pagada")
+        self.assertEqual(paid_report_order.display_status, "Sin productos · Pagada")
+
+    def test_orders_list_shows_paid_and_delivery_status_together(self):
+        order = self.order(total=1000, state="Entregada")
+        self.receipt(order, 1000)
+        request = RequestFactory().get(
+            "/gestion/ordenes/", {"periodo": "2026-09"}
+        )
+        request.user = type("User", (), {"is_authenticated": True})()
+
+        with patch("gestion.views.render") as render:
+            record_list(request, "ordenes")
+
+        records = render.call_args.args[2]["records"]
+        self.assertNotIn(order.pk, [item.pk for item in records])
+
+    def test_bog_directory_uses_actual_receipts_for_order_payment_status(self):
+        paid = self.order(total=1000, state="Entregada")
+        self.receipt(paid, 1000)
+        Ordenes.objects.filter(pk=paid.pk).update(total_abonado=0, saldo_pendiente=1000)
+        detail = self.record(
+            DetalleOrden, orden=paid, referencia_bog="BOG-PAGADO",
+            descripcion_producto="Producto con BOG", cantidad=1,
+        )
+        request = RequestFactory().get("/bog/")
+        request.user = type("User", (), {"is_authenticated": True})()
+
+        with patch("gestion.views.render") as render:
+            bog_list(request)
+
+        context = render.call_args.args[2]
+        self.assertEqual(context["paid_orders"], 1)
+        self.assertEqual(context["due_orders"], 0)
+        self.assertEqual(context["details"][0].pk, detail.pk)
+        self.assertEqual(context["details"][0].order_paid, Decimal("1000"))
+
+    def test_zero_invoice_is_not_automatically_paid(self):
+        self.order(total=0, state="Entregada")
+        context, orders = self.context("")
+        self.assertEqual(context["paid_orders_count"], 0)
+        self.assertEqual(context["pending_orders_count"], 1)
+        self.assertEqual(orders[0].payment_status, "Sin valor de venta")
+
+    def test_paid_list_uses_payment_month_and_keeps_delivery_separate(self):
+        from .finance_views import paid_list
+        order = self.order(month=8, state="Pagada")
+        self.receipt(order, 400, month=8)
+        self.receipt(order, 600, month=9)
+        self.record(DetalleOrden, orden=order, descripcion_producto="Producto", cantidad=2, cantidad_entregada=1)
+        request = RequestFactory().get("/pagadas/", {"periodo": "2026-09"})
+        request.user = type("User", (), {"is_authenticated": True})()
+        with patch("gestion.finance_views.render") as render:
+            paid_list(request)
+        rows = render.call_args.args[2]["orders"]
+        self.assertEqual([row.pk for row in rows], [order.pk])
+        self.assertEqual(rows[0].delivery_status, "Entrega parcial")
+        self.assertEqual(timezone.localtime(rows[0].last_payment).month, 9)
+
+    def test_financial_report_counts_cash_once_and_excludes_provisional_profit(self):
+        from .finance_views import financial_report
+        from .views import _refresh_order_balance
+        confirmed = self.order(total=1000)
+        provisional = self.order(total=1000)
+        self.receipt(confirmed, 1000)
+        self.receipt(provisional, 1000)
+        _refresh_order_balance(confirmed)
+        _refresh_order_balance(provisional)
+        Ordenes.objects.filter(pk=confirmed.pk).update(costos_completos=True, ganancia_neta=300)
+        Ordenes.objects.filter(pk=provisional.pk).update(ganancia_neta=1000)
+        self.record(MovimientosDinero, fecha=local(2026,9,7), tipo_movimiento="SALIDA", categoria="MOVIMIENTO MANUAL", descripcion="Gasto", valor_pesos=50, moneda="COP")
+        request = RequestFactory().get("/reporte-financiero/", {"periodo": "2026-09"})
+        request.user = type("User", (), {"is_authenticated": True})()
+        with patch("gestion.finance_views.render") as render:
+            financial_report(request)
+        context = render.call_args.args[2]
+        self.assertEqual(context["incoming"], 2000)
+        self.assertEqual(context["confirmed_profit"], 300)
+        self.assertEqual(context["result"], 250)
+        self.assertEqual(context["provisional"], 1)
+
+    def test_movement_receipt_updates_order_once_and_rejects_overpayment(self):
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from .views import record_form
+        order = self.order(total=1000)
+        def submit(value):
+            request = RequestFactory().post("/gestion/movimientos/nuevo/", {
+                "fecha": "2026-09-05T12:00", "tipo_movimiento": "ENTRADA", "orden": order.pk,
+                "valor_pesos": value, "descripcion": "Pago del cliente", "metodo_pago": "Transferencia",
+            })
+            request.user = type("User", (), {"is_authenticated": True})()
+            request.session = {}
+            request._messages = FallbackStorage(request)
+            return record_form(request, "movimientos")
+        self.assertEqual(submit(400).status_code, 302)
+        order.refresh_from_db()
+        self.assertEqual((order.total_abonado, order.saldo_pendiente), (400, 600))
+        self.assertEqual(Abonos.objects.filter(orden=order).count(), 1)
+        self.assertEqual(MovimientosDinero.objects.filter(orden=order).count(), 1)
+        self.assertEqual(submit(700).status_code, 200)
+        self.assertEqual(Abonos.objects.filter(orden=order).count(), 1)
+        self.assertEqual(MovimientosDinero.objects.filter(orden=order).count(), 1)
+        self.assertEqual(submit(600).status_code, 302)
+        order.refresh_from_db()
+        self.assertEqual(order.saldo_pendiente, 0)
+
+    def test_new_pages_render_and_legacy_receipts_count_without_movements(self):
+        from .finance_views import financial_report, paid_list
+        from .views import order_preview
+        order = self.order()
+        self.receipt(order, 1000)
+        request = RequestFactory().get("/", {"periodo": "2026-09", "historial": "1"})
+        request.user = type("User", (), {"is_authenticated": True})()
+        self.assertEqual(paid_list(request).status_code, 200)
+        self.assertEqual(financial_report(request).status_code, 200)
+        self.assertEqual(order_preview(request, order.pk).status_code, 200)
+        with patch("gestion.finance_views.render") as render:
+            financial_report(request)
+        self.assertEqual(render.call_args.args[2]["incoming"], 1000)
+        invalid = RequestFactory().get("/", {"periodo": "2026-13"})
+        invalid.user = request.user
+        self.assertEqual(paid_list(invalid).status_code, 200)
 
     def test_exactly_one_new_page_and_all_original_drawing_commands_unchanged(self):
         # Exercise real ReportLab pagination, including a long orders appendix.

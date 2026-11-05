@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load gestion_extras %}
+{% block title %}Pagadas | LujoShop{% endblock %}
+{% block page_title %}Pagadas{% endblock %}
+{% block page_description %}órdenes con pago completo, agrupadas por el mes del último pago{% endblock %}
+{% block content %}<div class="content-card">
+<form method="get" class="d-flex gap-2 mb-3"><input class="form-control" type="month" name="periodo" value="{{ periodo }}" required aria-label="Mes del último pago"><input class="form-control" name="q" value="{{ query }}" placeholder="Orden o cliente" aria-label="Buscar"><button class="btn btn-gold">Consultar</button></form>
+<div class="table-responsive"><table class="table"><thead><tr><th>Orden</th><th>Cliente</th><th>Creación de la orden</th><th>último pago</th><th>Total</th><th>Entrega</th><th>Costos</th><th>Acciones</th></tr></thead><tbody>
+{% for order in orders %}<tr><td>{{ order.numero_orden }}</td><td>{{ order.cliente }}</td><td>{{ order.fecha|date:"d/m/Y H:i" }}</td><td>{{ order.last_payment|date:"d/m/Y H:i" }}</td><td>{{ order.total_venta|money_cop }}</td><td>{{ order.delivery_status }}</td><td>{% if order.costos_completos %}Confirmados{% else %}Provisionales{% endif %}</td><td class="text-nowrap">
+<a class="btn btn-sm btn-outline-primary" href="{% url 'record_update' 'ordenes' order.pk %}" title="Ver / editar costos" aria-label="Ver / editar costos"><i class="bi bi-pencil" aria-hidden="true"></i></a>
+<a class="btn btn-sm btn-outline-success" href="{% url 'order_delivery' order.pk %}" title="Registrar entrega" aria-label="Registrar entrega"><i class="bi bi-truck" aria-hidden="true"></i></a>
+<a class="btn btn-sm btn-outline-dark" href="{% url 'record_list' 'abonos' %}?orden={{ order.pk }}" title="Ver pagos" aria-label="Ver pagos"><i class="bi bi-cash-coin" aria-hidden="true"></i></a>
+<a class="btn btn-sm btn-outline-dark" href="{% url 'order_preview' order.pk %}?historial=1" title="Ver historial" aria-label="Ver historial"><i class="bi bi-clock-history" aria-hidden="true"></i></a>
+</td></tr>{% empty %}<tr><td colspan="8">No hay órdenes pagadas en este mes.</td></tr>{% endfor %}
+</tbody></table></div></div>{% endblock %}

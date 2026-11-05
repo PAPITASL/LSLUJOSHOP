@@ -56,17 +56,43 @@ class ClientTests(TestCase):
         Clientes.objects.create(nombre="Sin teléfono", telefono="Sin registrar")
 
     def test_search_ignores_accents_spacing_and_phone_format(self):
-        for query in ("jose", "JOSE   ROJAS", "3143119543", "+57 314 3119543", "bogota"):
+        self.customer.correo = "jose@example.com"
+        self.customer.save()
+        for query in ("jose", "JOSE   ROJAS", "3143119543", "+57 314 3119543", "bogota", "jose@example.com"):
             with self.subTest(query=query):
                 request = RequestFactory().get("/", {"q": query})
                 records, _ = _apply_module_filters(Clientes.objects.all(), request, "clientes", MODULES["clientes"])
                 self.assertEqual(list(records.values_list("pk", flat=True)), [self.customer.pk])
 
+    def test_client_form_accepts_optional_email_and_validates_format(self):
+        form = ClienteForm(data={
+            "nombre": "Nuevo cliente",
+            "telefono": "",
+            "correo": "cliente@example.com",
+            "ciudad": "",
+            "direccion": "",
+            "observaciones": "",
+        })
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        customer = form.save()
+        self.assertEqual(customer.correo, "cliente@example.com")
+
+        invalid_form = ClienteForm(data={
+            "nombre": "Otro cliente",
+            "telefono": "",
+            "correo": "correo-invalido",
+            "ciudad": "",
+            "direccion": "",
+            "observaciones": "",
+        })
+        self.assertFalse(invalid_form.is_valid())
+        self.assertIn("correo", invalid_form.errors)
+
     def test_excel_duplicate_rows_roll_back_entire_import(self):
         workbook = load_workbook(build_template("clientes"))
         sheet = workbook.worksheets[0]
         sheet.delete_rows(2, sheet.max_row)
-        row = [None, "Nuevo cliente", "3001234567", "Cali", "Calle 1", ""]
+        row = [None, "Nuevo cliente", "3001234567", "nuevo@example.com", "Cali", "Calle 1", ""]
         sheet.append(row)
         sheet.append(row)
         data = BytesIO()
@@ -87,7 +113,10 @@ class ClientTests(TestCase):
 
     def test_merge_preserves_order_and_information_with_backup(self):
         # bulk_create bypasses save to represent pre-existing duplicates.
-        duplicate = Clientes(nombre="Jose Rojas", telefono="3143119543", direccion="Calle 9", observaciones="Dato importante")
+        duplicate = Clientes(
+            nombre="Jose Rojas", telefono="3143119543", correo="jose@example.com",
+            direccion="Calle 9", observaciones="Dato importante",
+        )
         Clientes.objects.bulk_create([duplicate])
         values = {field.name: Decimal("0") for field in Ordenes._meta.fields if isinstance(field, models.DecimalField)}
         order = Ordenes.objects.create(numero_orden="TEST", cliente=duplicate, fecha=timezone.now(), estado="Pendiente", **values)
@@ -100,6 +129,7 @@ class ClientTests(TestCase):
         order.refresh_from_db()
         self.customer.refresh_from_db()
         self.assertEqual(order.cliente_id, self.customer.pk)
+        self.assertEqual(self.customer.correo, "jose@example.com")
         self.assertEqual(self.customer.direccion, "Calle 9")
         self.assertIn("Dato importante", self.customer.observaciones)
         self.assertEqual(Clientes.objects.count(), 1)

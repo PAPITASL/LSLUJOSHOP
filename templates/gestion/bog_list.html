@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}BOG | LujoShop{% endblock %}
 {% block page_title %}Directorio de BOG{% endblock %}
-{% block page_description %}Consulta las referencias con flete pendiente y su orden{% endblock %}
+{% block page_description %}Busca referencias BOG de todas las órdenes, incluso si ya están pagadas{% endblock %}
 {% block content %}
 <section class="bog-summary">
-  <div><i class="bi bi-upc-scan"></i><span>Referencias con flete pendiente</span><strong>{{ total_bogs }}</strong></div>
-  <p>Este directorio reúne los BOG de todos los meses y muestra una fila por producto. Los productos que ya tienen un flete registrado en USD o COP no aparecen.</p>
+  <div><i class="bi bi-upc-scan"></i><span>Referencias BOG registradas</span><strong>{{ total_bogs }}</strong></div>
+  <p>Flete BOG pagado: <strong>{{ paid_bogs }}</strong> · Por pagar: <strong>{{ due_bogs }}</strong> · Órdenes pagadas: <strong>{{ paid_orders }}</strong> · Por pagar: <strong>{{ due_orders }}</strong>. La orden se considera pagada al cubrir el 100% del total con abonos.</p>
 </section>
 
 <section class="content-card bog-directory">
@@ -25,12 +25,14 @@
 
   <div class="table-responsive">
     <table class="table align-middle bog-table">
-      <thead><tr><th>BOG</th><th>Orden</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cantidad</th><th class="text-end">Acción</th></tr></thead>
+      <thead><tr><th>BOG</th><th>Orden</th><th>Flete BOG</th><th>Pago de orden</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cantidad</th><th class="text-end">Acción</th></tr></thead>
       <tbody>
       {% for detail in details %}
         <tr>
           <td><span class="bog-code">{{ detail.referencia_bog }}</span></td>
           <td><strong>{{ detail.orden.numero_orden }}</strong></td>
+          <td>{% if detail.flete_unitario_dolares > 0 or detail.flete_unitario_pesos > 0 %}<span class="badge text-bg-success">Pagado</span>{% else %}<span class="badge text-bg-warning">Por pagar</span>{% endif %}</td>
+          <td>{% if detail.order_paid >= detail.orden.total_venta %}{% if detail.orden.estado|lower == "entregada" %}<span class="badge text-bg-success">Entregada · Pagada</span>{% else %}<span class="badge text-bg-success">Pagada</span>{% endif %}{% else %}<span class="badge text-bg-warning">{{ detail.orden.estado }} · Por pagar</span>{% endif %}</td>
           <td class="text-nowrap">{{ detail.orden.fecha|date:"d/m/Y" }}</td>
           <td>{{ detail.orden.cliente.nombre }}</td>
           <td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.marca_producto or detail.modelo_producto %}<small>{{ detail.marca_producto|default:"" }} {{ detail.modelo_producto|default:"" }}</small>{% endif %}</td>
@@ -38,7 +40,7 @@
           <td class="text-end"><a class="btn btn-sm btn-outline-dark" href="{% url 'record_update' 'ordenes' detail.orden_id %}" title="Abrir orden {{ detail.orden.numero_orden }}"><i class="bi bi-box-arrow-up-right"></i> Ver orden</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="empty-state"><i class="bi bi-search"></i><p>{% if query %}No encontramos BOG con flete pendiente que coincidan con la búsqueda.{% else %}No hay referencias BOG con flete pendiente.{% endif %}</p></td></tr>
+        <tr><td colspan="9" class="empty-state"><i class="bi bi-search"></i><p>{% if query %}No encontramos referencias BOG que coincidan con la búsqueda.{% else %}No hay referencias BOG registradas.{% endif %}</p></td></tr>
       {% endfor %}
       </tbody>
     </table>

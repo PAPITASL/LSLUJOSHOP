@@ -22,8 +22,8 @@ def matching_client_ids(records, query):
     words = normalized_text(query).split()
     phone = normalized_phone(query)
     phone_query = bool(phone) and not any(c.isalpha() for c in query)
-    return [row["pk"] for row in records.values("pk", "nombre", "telefono", "ciudad", "direccion")
+    return [row["pk"] for row in records.values("pk", "nombre", "telefono", "correo", "ciudad", "direccion")
             if (phone_query and phone in normalized_phone(row["telefono"]))
             or (not phone_query and all(word in normalized_text(" ".join(
-                row[field] or "" for field in ("nombre", "telefono", "ciudad", "direccion")
+                row[field] or "" for field in ("nombre", "telefono", "correo", "ciudad", "direccion")
             )) for word in words))]

@@ -5,7 +5,7 @@
 {% block content %}
 <form method="post" class="order-editor" id="order-form" novalidate>{% csrf_token %}
   {{ product_data|json_script:"product-data" }}
-  {% if historical_cost_only %}<div class="alert alert-info"><i class="bi bi-info-circle"></i> Esta orden pertenece a un mes anterior. Puedes modificar sus observaciones, el BOG y el costo o flete, tanto en USD como en COP, de sus productos.</div>{% endif %}
+  {% if historical_cost_only %}<div class="alert alert-info"><i class="bi bi-info-circle"></i> Esta orden pertenece a un mes anterior. Puedes modificar sus observaciones, el BOG y el costo o flete, tanto en USD como en COP, de sus productos.</div>{% elif temporarily_editable_historical %}<div class="alert alert-warning"><i class="bi bi-exclamation-circle"></i> Octubre de 2026 está habilitado temporalmente para editar las órdenes. El resto de los meses anteriores sigue cerrado.</div>{% endif %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
   {% if formset.non_form_errors %}<div class="alert alert-danger">{{ formset.non_form_errors }}</div>{% endif %}
 

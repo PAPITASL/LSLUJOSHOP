@@ -1,0 +1,16 @@
+{% load gestion_extras %}
+<p class="text-muted">Si registraste un valor incorrecto, edita el abono con el valor correcto. Para quitarlo por completo, selecciona Eliminar y confirma. El saldo se recalcula automáticamente.</p>
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr><th>Fecha</th><th>Valor</th><th>Método</th><th>Referencia</th><th>Observaciones</th><th>Acciones</th></tr></thead>
+    <tbody>
+      {% for payment in payments %}
+      <tr>
+        <td>{{ payment.fecha|date:"d/m/Y H:i" }}</td><td>{{ payment.valor|money_cop }}</td>
+        <td>{{ payment.metodo_pago|default:"—" }}</td><td>{{ payment.referencia|default:"—" }}</td><td>{{ payment.observaciones|default:"—" }}</td>
+        <td><div class="d-flex gap-2"><a class="btn btn-outline-dark btn-sm" href="{% url 'record_update' 'abonos' payment.pk %}" aria-label="Editar abono {{ payment.pk }}">Editar</a><a class="btn btn-outline-danger btn-sm" href="{% url 'record_delete' 'abonos' payment.pk %}" aria-label="Eliminar abono {{ payment.pk }}">Eliminar</a></div></td>
+      </tr>
+      {% empty %}<tr><td colspan="6">Sin pagos registrados.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>

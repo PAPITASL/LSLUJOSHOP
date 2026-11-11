@@ -10,10 +10,12 @@
 </section>
 
 <form method="get" class="content-card pending-delivery-search">
+  <div><label for="purchase-status">Estado de compra</label><select id="purchase-status" class="form-select" name="compra"><option value="">Todos</option><option value="sin_comprar"{% if purchase_status == 'sin_comprar' %} selected{% endif %}>Sin comprar (sin costo)</option><option value="comprados"{% if purchase_status == 'comprados' %} selected{% endif %}>Comprados (con costo)</option></select></div>
   <div><i class="bi bi-search"></i><input class="form-control" name="q" value="{{ search }}" placeholder="Buscar cliente, teléfono, factura o producto"></div>
   <button class="btn btn-dark" type="submit">Buscar</button>
-  {% if search %}<a class="btn btn-light" href="{% url 'pending_deliveries' %}">Limpiar</a>{% endif %}
+  {% if search or purchase_status %}<a class="btn btn-light" href="{% url 'pending_deliveries' %}">Limpiar</a>{% endif %}
 </form>
+<p class="text-muted">Un producto sin costo en pesos ni dólares se considera sin comprar. El flete por sí solo no cuenta como compra.</p>
 
 <div class="pending-delivery-list">
   {% for group in order_groups %}
@@ -26,7 +28,7 @@
       <table class="table align-middle mb-0">
         <thead><tr><th>Producto</th><th>Pedido</th><th>Entregado</th><th>Falta</th><th>Estado de esta entrega</th></tr></thead>
         <tbody>{% for detail in group.details %}<tr>
-          <td><strong>{{ detail.descripcion_producto }}</strong>{% if detail.marca_producto or detail.modelo_producto %}<small>{{ detail.marca_producto|default:"" }} {{ detail.modelo_producto|default:"" }}</small>{% endif %}</td>
+          <td><strong>{{ detail.descripcion_producto }}</strong><small>{% if detail.is_purchased %}Comprado ? costo registrado{% else %}Sin comprar ? sin costo{% endif %}</small>{% if detail.marca_producto or detail.modelo_producto %}<small>{{ detail.marca_producto|default:"" }} {{ detail.modelo_producto|default:"" }}</small>{% endif %}</td>
           <td>{{ detail.cantidad }}</td><td>{{ detail.cantidad_entregada }}</td><td><strong>{{ detail.pending_quantity }}</strong></td>
           <td>{% if detail.is_ready %}<select class="form-select form-select-sm pending-delivery-select" name="entregar_{{ detail.pk }}"><option value="0" selected>No entregado</option><option value="{{ detail.ready_quantity }}">Entregar ahora ({{ detail.ready_quantity }})</option></select>{% else %}<span class="delivery-waiting"><i class="bi bi-clock"></i> Aún no disponible</span>{% endif %}</td>
         </tr>{% endfor %}</tbody>
@@ -38,7 +40,7 @@
     </footer>
   </form>
   {% empty %}
-  <div class="content-card pending-delivery-empty"><i class="bi bi-check2-circle"></i><h2>No hay entregas pendientes</h2><p>{% if search %}No se encontraron resultados para “{{ search }}”.{% else %}Todos los productos vendidos ya fueron entregados.{% endif %}</p></div>
+  <div class="content-card pending-delivery-empty"><i class="bi bi-check2-circle"></i><h2>No hay entregas pendientes</h2><p>{% if purchase_status %}No hay productos pendientes de entrega con este estado de compra.{% elif search %}No se encontraron resultados para “{{ search }}”.{% else %}Todos los productos vendidos ya fueron entregados.{% endif %}</p></div>
   {% endfor %}
 </div>
 {% endblock %}

@@ -1,7 +1,9 @@
 from decimal import Decimal
+from calendar import monthrange
 
 from django.contrib.auth.decorators import login_required
 from django.db.models import F, Sum
+from django.db.models.functions import TruncDay
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -61,11 +63,29 @@ def financial_report(request):
     # Only unassigned manual expenses are deducted here: assigned product/freight
     # costs are already in each order's net margin.
     overhead = amount(movements.filter(tipo_movimiento="SALIDA", orden__isnull=True, categoria="MOVIMIENTO MANUAL"))
+    days = monthrange(period.year, period.month)[1]
+    daily_in = [zero for _ in range(days)]
+    daily_out = [zero for _ in range(days)]
+    for row in receipts.annotate(day=TruncDay("fecha")).values("day").annotate(total=Sum("valor")):
+        daily_in[row["day"].day - 1] += row["total"]
+    manual_in = movements.filter(tipo_movimiento="ENTRADA").exclude(referencia__startswith="AUTO-ABONO-")
+    for query, values in ((manual_in, daily_in), (movements.filter(tipo_movimiento="SALIDA"), daily_out)):
+        for row in query.annotate(day=TruncDay("fecha")).values("day").annotate(total=Sum("valor_pesos")):
+            values[row["day"].day - 1] += row["total"]
+    confirmed_count = confirmed.count()
+    provisional = closed.filter(costos_completos=False).count()
+    charts = {
+        "cash": [incoming, outgoing, incoming - outgoing],
+        "profit": [profit, overhead, profit - overhead],
+        "daily_in": daily_in, "daily_out": daily_out,
+        "confirmed": confirmed_count, "provisional": provisional,
+    }
     return render(request, "gestion/financial_report.html", {
         "periodo": f"{period.year:04d}-{period.month:02d}",
         "incoming": incoming, "outgoing": outgoing, "cash_balance": incoming-outgoing,
         "confirmed_profit": profit, "overhead": overhead, "result": profit-overhead,
-        "provisional": closed.filter(costos_completos=False).count(),
-        "confirmed_count": confirmed.count(),
+        "provisional": provisional,
+        "confirmed_count": confirmed_count,
+        "financial_charts": charts,
         "movements": movements.select_related("orden").order_by("fecha", "pk"),
     })

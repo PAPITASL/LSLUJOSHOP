@@ -82,6 +82,57 @@ class InventoryWorkflowTests(TestCase):
             f"entregar_{self.detail.pk}": quantity, "abono": "0",
         })
 
+    def test_release_product_frees_stock_and_recalculates_order(self):
+        from .inventory import stock_products
+        from .models import MovimientosDinero
+        self.detail.origen_producto = "EXTERNO"
+        self.detail.cantidad_recibida = 4
+        self.detail.costo_unitario_pesos = 10
+        self.detail.total_costo_pesos = 40
+        self.detail.total_venta = 100
+        self.detail.save()
+        self.order.total_venta = 100
+        self.order.save()
+        Abonos.objects.create(orden=self.order, fecha=timezone.now(), valor=50)
+        url = reverse("order_release_product", args=[self.order.pk, self.detail.pk])
+        self.assertContains(self.client.get(url), "Confirmar paso a inventario")
+        self.assertTrue(DetalleOrden.objects.filter(pk=self.detail.pk).exists())
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.order.refresh_from_db()
+        product = stock_products().get(pk=self.product.pk)
+        self.assertEqual((product.cantidad_disponible, product.stock_free), (5, 5))
+        self.assertEqual((self.order.total_venta, self.order.costo_productos_pesos, self.order.saldo_pendiente), (0, 0, 0))
+        self.assertEqual(self.order.total_abonado, 50)
+        self.assertIn("pasa a inventario libre", self.order.observaciones)
+        purchase = MovimientosDinero.objects.get(referencia=f"AUTO-INVENTARIO-COMPRA-{self.detail.pk}")
+        self.assertIsNone(purchase.orden_id)
+        self.assertEqual(purchase.valor_pesos, 40)
+        self.assertEqual(self.client.post(url).status_code, 404)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.cantidad_disponible, 5)
+
+    def test_release_rejects_delivered_or_unpurchased_product(self):
+        url = reverse("order_release_product", args=[self.order.pk, self.detail.pk])
+        self.detail.cantidad_entregada = 1
+        self.detail.save()
+        self.client.post(url)
+        self.assertTrue(DetalleOrden.objects.filter(pk=self.detail.pk).exists())
+        self.detail.cantidad_entregada = 0
+        self.detail.producto = None
+        self.detail.save()
+        self.client.post(url)
+        self.assertTrue(DetalleOrden.objects.filter(pk=self.detail.pk).exists())
+
+    def test_release_keeps_other_order_products_reserved(self):
+        from .inventory import stock_products
+        other = self.create_record(DetalleOrden, orden=self.order, producto=self.product,
+                                   descripcion_producto="Segunda línea", cantidad=1, total_venta=200)
+        self.client.post(reverse("order_release_product", args=[self.order.pk, self.detail.pk]))
+        self.order.refresh_from_db()
+        self.assertTrue(DetalleOrden.objects.filter(pk=other.pk).exists())
+        self.assertEqual(self.order.total_venta, 200)
+        self.assertEqual(stock_products().get(pk=self.product.pk).stock_free, 4)
+
     def test_pending_costs_lists_only_uncosted_products_in_active_orders(self):
         priced_detail = self.create_record(
             DetalleOrden, orden=self.order, producto=self.product,
@@ -111,7 +162,13 @@ class InventoryWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Farola")
         self.assertContains(response, "Registrar costos")
-        self.assertNotContains(response, priced_detail.descripcion_producto)
+        self.assertContains(response, priced_detail.descripcion_producto)
+        group = response.context["order_groups"][0]
+        self.assertEqual([item.pk for item in group["details"]], [self.detail.pk])
+        self.assertEqual([item.pk for item in group["purchased_details"]], [priced_detail.pk])
+        self.assertEqual((group["pending_count"], group["purchased_count"], group["progress"]), (1, 1, 50))
+        searched = self.client.get(reverse("pending_costs"), {"q": "Farola"})
+        self.assertContains(searched, priced_detail.descripcion_producto)
         self.assertNotContains(response, "Producto cancelado")
         self.assertNotContains(response, "Producto de otro mes")
         self.assertEqual(response.context["orders_count"], 1)
@@ -362,6 +419,23 @@ class InventoryWorkflowTests(TestCase):
         response = self.client.get(reverse("pending_deliveries"))
         self.assertEqual(response.context["ready_units"], 5)
         self.assertEqual(response.context["total_units"], 8)
+
+    def test_pending_deliveries_filter_purchase_by_cost_in_either_currency(self):
+        dollars = self.create_record(DetalleOrden, orden=self.order, producto=self.product,
+                                    descripcion_producto="Comprado USD", cantidad=1, costo_unitario_dolares=10)
+        pesos = self.create_record(DetalleOrden, orden=self.order, producto=self.product,
+                                  descripcion_producto="Comprado COP", cantidad=1, costo_unitario_pesos=100)
+        self.detail.flete_unitario_pesos = 50
+        self.detail.save()
+        url = reverse("pending_deliveries")
+        def ids(response):
+            return {d.pk for group in response.context["order_groups"] for d in group["details"]}
+        missing = self.client.get(url, {"compra": "sin_comprar"})
+        self.assertEqual(ids(missing), {self.detail.pk})
+        self.assertEqual(missing.context["total_units"], 4)
+        self.assertEqual(ids(self.client.get(url, {"compra": "comprados"})), {dollars.pk, pesos.pk})
+        self.assertEqual(ids(self.client.get(url)), {self.detail.pk, dollars.pk, pesos.pk})
+        self.assertEqual(ids(self.client.get(url, {"compra": "comprados", "q": "USD"})), {dollars.pk})
 
     def test_complete_report_download_is_pdf(self):
         response = self.client.get(reverse("reports_dashboard"), {"formato": "pdf"})

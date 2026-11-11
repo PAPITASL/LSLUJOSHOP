@@ -22,6 +22,7 @@
           <td><span class="delivery-done">{{ detail.cantidad_entregada }}</span></td>
           <td><strong>{{ detail.cantidad|subtract:detail.cantidad_entregada }}</strong></td>
           <td>
+            {% if detail.producto_id and not detail.cantidad_entregada %}<a class="btn btn-outline-dark btn-sm mb-2" href="{% url 'order_release_product' order.pk detail.pk %}">Pasar a inventario</a>{% endif %}
             {% if detail.cantidad_entregada >= detail.cantidad %}
               <select class="form-select form-select-sm delivery-status" name="estado_entrega_{{ detail.pk }}" aria-label="Estado de entrega de {{ detail.descripcion_producto }}"><option value="" selected>Entregado</option><option value="no_entregado">Cambiar a no entregado</option></select>
             {% else %}
@@ -43,4 +44,8 @@
   <p class="delivery-note"><i class="bi bi-info-circle"></i> Al guardar, Entregar ahora descuenta unidades del inventario. Cambiar a no entregado devuelve las unidades entregadas al inventario y deja el producto pendiente; los abonos registrados se conservan.</p>
   <div class="form-actions"><a class="btn btn-light" href="{{ return_url }}">Cancelar</a><button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Guardar cambios</button></div>
 </form>
+<section class="content-card mt-4">
+  <h2 class="delivery-title"><i class="bi bi-cash-coin"></i> Abonos registrados</h2>
+  {% include "gestion/payment_history.html" %}
+</section>
 {% endblock %}

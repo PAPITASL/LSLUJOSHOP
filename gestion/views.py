@@ -1505,6 +1505,21 @@ def pending_costs(request):
         )
         group["details"].append(detail)
 
+    # Expand each matching order with its complete purchase picture, even when
+    # the search matched just one of its products.
+    for group in orders.values():
+        group["details"] = []
+        group["purchased_details"] = []
+    for detail in DetalleOrden.objects.filter(orden_id__in=orders).order_by("pk"):
+        group = orders[detail.orden_id]
+        key = "purchased_details" if detail.costo_unitario_dolares or detail.costo_unitario_pesos else "details"
+        group[key].append(detail)
+    for group in orders.values():
+        group["pending_count"] = len(group["details"])
+        group["purchased_count"] = len(group["purchased_details"])
+        group["total_count"] = group["pending_count"] + group["purchased_count"]
+        group["progress"] = round(100 * group["purchased_count"] / group["total_count"]) if group["total_count"] else 0
+
     return render(request, "gestion/pending_costs.html", {
         "order_groups": list(orders.values()),
         "orders_count": len(orders),
@@ -1518,12 +1533,23 @@ def pending_costs(request):
 def pending_deliveries(request):
     """Reune productos vendidos que todavia no han sido entregados."""
     search = request.GET.get("q", "").strip()
+    purchase_status = request.GET.get("compra", "")
+    if purchase_status not in {"sin_comprar", "comprados"}:
+        purchase_status = ""
     details = (
         DetalleOrden.objects.select_related("orden", "orden__cliente", "producto")
         .filter(cantidad_entregada__lt=F("cantidad"))
         .exclude(orden__estado__iexact="cancelada")
         .order_by("orden__fecha", "orden_id", "pk")
     )
+    missing_cost = (
+        (Q(costo_unitario_dolares__isnull=True) | Q(costo_unitario_dolares=0))
+        & (Q(costo_unitario_pesos__isnull=True) | Q(costo_unitario_pesos=0))
+    )
+    if purchase_status == "sin_comprar":
+        details = details.filter(missing_cost)
+    elif purchase_status == "comprados":
+        details = details.exclude(missing_cost)
     if search:
         details = details.filter(
             Q(orden__numero_orden__icontains=search)
@@ -1537,6 +1563,7 @@ def pending_deliveries(request):
     remaining_stock = {}
     for detail in details:
         detail.pending_quantity = detail.cantidad - detail.cantidad_entregada
+        detail.is_purchased = bool(detail.costo_unitario_dolares or detail.costo_unitario_pesos)
         stock = remaining_stock.setdefault(
             detail.producto_id, max(detail.producto.cantidad_disponible, 0) if detail.producto else 0,
         )
@@ -1557,9 +1584,71 @@ def pending_deliveries(request):
         "order_groups": order_groups,
         "orders_count": len(order_groups),
         "total_units": total_units,
+        "purchase_status": purchase_status,
         "ready_units": ready_units,
         "search": search,
     })
+
+
+@login_required
+def order_release_product(request, pk, detail_pk):
+    order = get_object_or_404(Ordenes, pk=pk)
+    detail = get_object_or_404(DetalleOrden.objects.select_related("producto"), pk=detail_pk, orden=order)
+    if request.method == "POST":
+        try:
+            with transaction.atomic():
+                order = Ordenes.objects.select_for_update().get(pk=pk)
+                detail = DetalleOrden.objects.select_for_update().get(pk=detail_pk, orden=order)
+                if order.estado.casefold() in {"cancelada", "cotización"}:
+                    raise ValidationError("Esta acción requiere una orden activa.")
+                if detail.cantidad_entregada:
+                    raise ValidationError("Primero registra la devolución cambiando el producto a no entregado.")
+                if not detail.producto_id:
+                    raise ValidationError("El producto todavía no ha sido comprado; registra primero su costo.")
+                product = Productos.objects.select_for_update().get(pk=detail.producto_id)
+                if product.cantidad_disponible < detail.cantidad:
+                    raise ValidationError("No hay suficientes existencias físicas para pasar este producto a inventario.")
+                # Preserve actual purchase/freight cash outflows as inventory costs.
+                _sync_order_expense_movements(order)
+                for prefix in ("COMPRA", "FLETE"):
+                    MovimientosDinero.objects.filter(referencia=f"AUTO-{prefix}-{detail.pk}").update(
+                        orden=None, vendedor=None, referencia=f"AUTO-INVENTARIO-{prefix}-{detail.pk}",
+                        descripcion=f"Inventario #{product.pk}: {detail.descripcion_producto}",
+                        observaciones=f"Liberado de la orden {order.numero_orden}; se conserva el gasto de compra.")
+                note = (f"{timezone.localtime():%d/%m/%Y %H:%M}: {detail.cantidad} × "
+                        f"{detail.descripcion_producto} (producto #{product.pk}) pasa a inventario libre. "
+                        f"Registrado por {request.user.get_username()}.")
+                detail.delete()
+                product.estado = "Disponible"
+                product.save(update_fields=["estado", "actualizado_en"])
+                remaining = list(DetalleOrden.objects.filter(orden=order))
+                order.subtotal_venta = sum((item.total_venta for item in remaining), Decimal("0"))
+                order.costo_productos_pesos = sum((item.total_costo_pesos for item in remaining), Decimal("0"))
+                order.costo_total_pesos = order.costo_productos_pesos + order.flete_pesos + (order.otros_costos_pesos or 0)
+                order.total_venta = max(Decimal("0"), order.subtotal_venta - (order.descuento or 0))
+                order.ganancia_bruta = order.total_venta - order.costo_total_pesos
+                rate = order.vendedor.porcentaje_comision if order.vendedor_id else Decimal("0")
+                order.comision_vendedor = order.total_venta * rate / Decimal("100")
+                order.ganancia_neta = order.ganancia_bruta - order.comision_vendedor
+                order.total_abonado = Abonos.objects.filter(orden=order).aggregate(total=Sum("valor"))["total"] or Decimal("0")
+                order.saldo_pendiente = max(Decimal("0"), order.total_venta - order.total_abonado)
+                if remaining and all(item.cantidad_entregada >= item.cantidad for item in remaining):
+                    order.estado = "Entregada"
+                elif any(item.cantidad_entregada for item in remaining):
+                    order.estado = "Entrega parcial"
+                else:
+                    order.estado = "Pagada" if order.total_venta > 0 and not order.saldo_pendiente else "Abonada" if order.total_abonado else "Pendiente"
+                order.observaciones = "\n".join(filter(None, [order.observaciones, note]))
+                order.save()
+                _refresh_order_balance(order)
+                _sync_order_expense_movements(order)
+                if order.total_abonado > order.total_venta:
+                    messages.warning(request, f"Los abonos superan el nuevo total en ${order.total_abonado-order.total_venta:,.0f}. Revisa el saldo a favor del cliente; los pagos se conservaron.")
+            messages.success(request, "Producto retirado de la orden y liberado en inventario. Totales actualizados.")
+        except ValidationError as error:
+            messages.error(request, "; ".join(error.messages))
+        return redirect("order_delivery", pk=pk)
+    return render(request, "gestion/order_release_product.html", {"order": order, "detail": detail})
 
 
 @login_required
@@ -1688,6 +1777,7 @@ def order_delivery(request, pk):
         "order": order,
         "details": details,
         "return_url": reverse("pending_deliveries") if request.GET.get("next") == reverse("pending_deliveries") else reverse("record_list", args=["ordenes"]),
+        "payments": Abonos.objects.filter(orden=order).order_by("fecha", "pk"),
     })
 
 

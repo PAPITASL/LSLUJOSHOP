@@ -4,6 +4,7 @@
 {% block page_description %}Entradas y salidas por fecha del movimiento; ganancias por mes del pago completo{% endblock %}
 {% block content %}<div class="content-card">
 <form method="get" class="d-flex gap-2 mb-3"><input class="form-control" type="month" name="periodo" value="{{ periodo }}" required aria-label="Mes"><button class="btn btn-gold">Consultar</button></form>
+{% include "gestion/financial_charts.html" %}
 <h5>Dinero del mes</h5><dl class="row"><dt class="col-6">Entradas registradas</dt><dd class="col-6">{{ incoming|money_cop }}</dd><dt class="col-6">Salidas registradas</dt><dd class="col-6">{{ outgoing|money_cop }}</dd><dt class="col-6">Flujo neto del mes</dt><dd class="col-6">{{ cash_balance|money_cop }}</dd></dl>
 <p class="text-muted">El flujo neto es entradas menos salidas del mes; no es el saldo total disponible ni la ganancia. Cada abono se cuenta una vez, incluso si es antiguo y no tiene movimiento automático.</p>
 <h5>Ganancia de órdenes pagadas con costos confirmados</h5><dl class="row"><dt class="col-6">órdenes confirmadas</dt><dd class="col-6">{{ confirmed_count }}</dd><dt class="col-6">Ganancia neta de esas órdenes</dt><dd class="col-6">{{ confirmed_profit|money_cop }}</dd><dt class="col-6">Otros gastos manuales sin orden</dt><dd class="col-6">{{ overhead|money_cop }}</dd><dt class="col-6">Resultado después de esos gastos</dt><dd class="col-6">{{ result|money_cop }}</dd></dl>

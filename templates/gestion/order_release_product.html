@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% load gestion_extras %}
+{% block page_title %}Pasar producto a inventario{% endblock %}
+{% block content %}
+<section class="content-card">
+  <h2>{{ detail.descripcion_producto }}</h2>
+  <p>Se retirarán las {{ detail.cantidad }} unidades de la orden {{ order.numero_orden }} del cliente {{ order.cliente }} y quedarán libres para venderse desde inventario.</p>
+  <p>La venta de {{ detail.total_venta|money_cop }} se quitará del total de la orden. Se recalcularán costos, ganancia, comisión y saldo. Los abonos y los gastos de compra se conservan.</p>
+  <p>Esta acción aplica al producto completo de esta línea. Si ya fue entregado, primero registra su devolución.</p>
+  <form method="post">{% csrf_token %}<a class="btn btn-light" href="{% url 'order_delivery' order.pk %}">Volver</a> <button class="btn btn-gold" type="submit">Confirmar paso a inventario</button></form>
+</section>
+{% endblock %}

@@ -255,6 +255,13 @@ class MonthlyFinanceTests(TestCase):
         self.assertEqual(context["confirmed_profit"], 300)
         self.assertEqual(context["result"], 250)
         self.assertEqual(context["provisional"], 1)
+        charts = context["financial_charts"]
+        self.assertEqual(sum(charts["daily_in"]), context["incoming"])
+        self.assertEqual(sum(charts["daily_out"]), context["outgoing"])
+        self.assertEqual(len(charts["daily_in"]), 30)
+        self.assertEqual(charts["cash"], [2000, 50, 1950])
+        self.assertEqual(charts["profit"], [300, 50, 250])
+        self.assertEqual((charts["confirmed"], charts["provisional"]), (1, 1))
 
     def test_movement_receipt_updates_order_once_and_rejects_overpayment(self):
         from django.contrib.messages.storage.fallback import FallbackStorage

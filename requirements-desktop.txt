@@ -1,0 +1,4 @@
+-r requirements.txt
+pywebview==6.2.1
+waitress==3.0.2
+whitenoise==6.12.0

@@ -4,12 +4,16 @@ import os
 from pathlib import Path
 import sys
 import threading
+from local_runtime import exclusive, database
 
 ROOT = Path(__file__).resolve().parent
 
 
 def main():
+    sys.argv[0] = str(ROOT / 'desktop.py')
     os.chdir(ROOT)
+    if (ROOT / 'installation.json').exists() and not (ROOT / 'RESTAURACION-COMPLETA.txt').exists():
+        raise RuntimeError('La restauracion no termino correctamente. Repite la recuperacion en otra carpeta nueva.')
     if sys.platform == "win32":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LujoShop.Desktop")
@@ -40,30 +44,64 @@ def main():
     thread.start()
     try:
         webview.settings["ALLOW_DOWNLOADS"] = True
-        webview.create_window(
+        window = webview.create_window(
             "LujoShop", f"http://127.0.0.1:{server.effective_port}/",
             width=1360, height=900, min_size=(1000, 650),
         )
+        loaded = threading.Event()
+        closed = threading.Event()
+        window.events.loaded += loaded.set
+        def on_closed():
+            closed.set()
+            loaded.set()
+        window.events.closed += on_closed
+        startup_errors = []
+        def check_startup():
+            from urllib.request import urlopen
+            try:
+                if not loaded.wait(60):
+                    raise RuntimeError('La ventana no termino de cargar en 60 segundos.')
+                if closed.is_set():
+                    return
+                if '--smoke-test' not in sys.argv:
+                    return
+                with urlopen(f"http://127.0.0.1:{server.effective_port}/cuentas/login/", timeout=10) as response:
+                    assert response.status == 200
+                (ROOT / 'window-smoke-ok.txt').write_text(str(server.effective_port), 'utf-8')
+            except Exception as error:
+                startup_errors.append(error)
+            finally:
+                if startup_errors or '--smoke-test' in sys.argv:
+                    window.destroy()
+
         webview.start(
+            check_startup,
             gui="edgechromium", private_mode=True,
             icon=str(ROOT / "static" / "img" / "lujoshop.ico"),
         )
+        if startup_errors:
+            raise startup_errors[0]
     finally:
         server.close()
+        thread.join(timeout=10)
 
 
 if __name__ == "__main__":
     try:
-        main()
+        with exclusive(), database():
+            main()
     except Exception as exc:
         import ctypes
         import tempfile
         log = Path(tempfile.gettempdir()) / "LujoShop-error.log"
         logging.basicConfig(filename=log, level=logging.ERROR, encoding="utf-8")
         logging.exception("No fue posible iniciar LujoShop")
+        if '--smoke-test' in sys.argv:
+            print(f'{exc}\nRegistro: {log}', file=sys.stderr)
+            sys.exit(1)
         ctypes.windll.user32.MessageBoxW(
             0,
-            f"No fue posible iniciar LujoShop.\n\nComprueba que PostgreSQL esté iniciado.\n"
+            f"No fue posible iniciar LujoShop.\n\nRevisa el detalle y la guia RECUPERACION.md.\n"
             f"{exc}\n\nDetalle técnico: {log}",
             "LujoShop", 0x10,
         )

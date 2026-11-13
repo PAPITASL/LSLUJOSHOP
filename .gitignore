@@ -4,3 +4,12 @@ venv/
 db.sqlite3
 __pycache__/
 *.py[cod]
+runtime/
+local-data/
+backups/
+restoration-tests/
+installation.json
+.desktop.lock
+window-smoke-ok.txt
+SMOKE-RESULTS.json
+offline-installers/*.exe
